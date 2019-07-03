@@ -41,7 +41,7 @@ class QuantizedLinear(nn.Linear):
 
     def forward(self, input):
 
-        if input.size(1) != 784:
+        if quantize is sign_quantize and input.size(1) != 784:
             input.data=quantize(input.data)
         if not hasattr(self.weight,'org'):
             self.weight.org=self.weight.data.clone()
@@ -60,7 +60,7 @@ class QuantizedConv2d(nn.Conv2d):
 
 
     def forward(self, input):
-        if input.size(1) != 3:
+        if quantize is sign_quantize and input.size(1) != 3:
             input.data = quantize(input.data)
         if not hasattr(self.weight,'org'):
             self.weight.org=self.weight.data.clone()
