@@ -54,7 +54,7 @@ config.ks = 16
 def get_code_book(dim: int, ks: int):
     if (dim, ks) not in code_books:
         book = torch.randn(size=(ks, dim)).cuda()
-        book /= torch.norm(book, dim=1, keepdim=True)
+        book /= torch.max(torch.abs(book), dim=1, keepdim=True)[0]
         code_books[(dim, ks)] = book
         return book
     else:
@@ -62,7 +62,7 @@ def get_code_book(dim: int, ks: int):
 
 
 def creat_quantize(module: nn.Module):
-    if config.quantize == "BNN":
+    if config.quantize in ["BNN", "BC"]:
         return sign_quantize
     elif config.quantize == "identical":
         return identical_quantize
@@ -72,7 +72,7 @@ def creat_quantize(module: nn.Module):
         elif isinstance(module, nn.Conv2d):
             assert module.transposed is False
             dim = 3 if module.in_channels == 3 else config.dim
-            return ConvQuantize(dim, ks=16)
+            return ConvQuantize(dim=dim, ks=config.ks)
 
     assert False, "No matched {} quantize for {}" \
         .format(config.quantize, module)

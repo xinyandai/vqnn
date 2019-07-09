@@ -44,7 +44,7 @@ class AlexNetOWT_BN(nn.Module):
             nn.BatchNorm1d(1024),
             nn.ReLU(inplace=True),
             nn.Dropout(0.5),
-            nn.Linear(1024, num_classes)
+            nn.Linear(1024, num_classes),
             nn.LogSoftMax()
         )
 

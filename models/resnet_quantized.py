@@ -198,7 +198,7 @@ class ResNet_cifar10(ResNet):
         self.layer4 = lambda x: x
         self.avgpool = nn.AvgPool2d(8)
         self.bn2 = nn.BatchNorm1d(64*self.inflate)
-        self.bn3 = nn.BatchNorm1d(10)
+        self.bn3 = nn.BatchNorm1d(num_classes)
         self.logsoftmax = nn.LogSoftmax()
         self.fc = QuantizedLinear(64 * self.inflate, num_classes)
 
@@ -222,6 +222,7 @@ class ResNet_cifar10(ResNet):
 def resnet_quantized(**kwargs):
     num_classes, depth, dataset = map(
         kwargs.get, ['num_classes', 'depth', 'dataset'])
+    print("num_classes", num_classes)
     if dataset == 'imagenet':
         num_classes = num_classes or 1000
         depth = depth or 50
@@ -244,5 +245,12 @@ def resnet_quantized(**kwargs):
     elif dataset == 'cifar10':
         num_classes = num_classes or 10
         depth = depth or 18
+        return ResNet_cifar10(num_classes=num_classes,
+                              block=BasicBlock, depth=depth)
+
+    elif dataset == 'cifar100':
+        num_classes = num_classes or 100
+        depth = depth or 18
+        print("num_classes", num_classes)
         return ResNet_cifar10(num_classes=num_classes,
                               block=BasicBlock, depth=depth)

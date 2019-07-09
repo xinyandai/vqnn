@@ -1,5 +1,5 @@
 import torch.nn as nn
-from .pyvq import creat_quantize, sign_quantize
+from .pyvq import creat_quantize, sign_quantize, config
 
 
 class QuantizedLinear(nn.Linear):
@@ -10,7 +10,7 @@ class QuantizedLinear(nn.Linear):
 
     def forward(self, input):
 
-        if self.quantize is sign_quantize and input.size(1) != 784:
+        if config.quantize == "BNN" and input.size(1) != 784:
             input.data = self.quantize(input.data)
         if not hasattr(self.weight,'org'):
             self.weight.org = self.weight.data.clone()
@@ -34,7 +34,7 @@ class QuantizedConv2d(nn.Conv2d):
 
 
     def forward(self, input):
-        if  self.quantize is sign_quantize and input.size(1) != 3:
+        if  config.quantize == "BNN" and input.size(1) != 3:
             input.data =  self.quantize(input.data)
         if not hasattr(self.weight,'org'):
             self.weight.org=self.weight.data.clone()
