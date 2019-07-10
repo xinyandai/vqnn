@@ -1,8 +1,6 @@
 import argparse
-import os
 import time
 import logging
-import torch
 import torch.nn as nn
 import torch.nn.parallel
 import torch.backends.cudnn as cudnn
@@ -15,7 +13,6 @@ from preprocess import get_transform
 from utils import *
 from datetime import datetime
 from ast import literal_eval
-from torchvision.utils import save_image
 
 
 model_names = sorted(name for name in models.__dict__
@@ -66,11 +63,31 @@ parser.add_argument('--resume', default='', type=str, metavar='PATH',
 parser.add_argument('-e', '--evaluate', type=str, metavar='FILE',
                     help='evaluate model FILE on validation set')
 
+parser.add_argument('--dim', type=int, default=4)
+parser.add_argument('--ks', type=int, default=16)
+parser.add_argument('--quantize', type=str, default='VQ',
+                    choices=['VQ', 'BNN', 'BC', 'identical'])
+
+def get_operators(args):
+    import models.vq_ops as vq
+    if args.quantize == "BNN":
+        return vq.BNNLinear, vq.BNNConv2d
+    elif args.quantize == "BC":
+        return vq.BNNLinear, vq.BNNConv2d
+    elif args.quantize == "identical":
+        return nn.Linear, nn.Conv2d
+    elif args.quantize == "VQ":
+        return vq.VQLinear, vq.VQConv2d
+
+    assert False, "No matched for {}.".format(args.quantize)
 
 def main():
     global args, best_prec1
     best_prec1 = 0
     args = parser.parse_args()
+    args.linear, args.conv2d = get_operators(args)
+    print("using linear {}  and conv2d {}".
+          format(args.linear, args.conv2d))
 
     if args.evaluate:
         args.results_dir = '/tmp'
@@ -97,7 +114,7 @@ def main():
     # create model
     logging.info("creating model %s", args.model)
     model = models.__dict__[args.model]
-    model_config = {'input_size': args.input_size, 'dataset': args.dataset}
+    model_config = {'input_size': args.input_size, 'dataset': args.dataset, 'args': args}
 
     if args.model_config is not '':
         model_config = dict(model_config, **literal_eval(args.model_config))

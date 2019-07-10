@@ -1,23 +1,20 @@
-import torch.nn as nn
-import torchvision.transforms as transforms
 import math
-from .quantized_modules import  QuantizedLinear, QuantizedConv2d
+from models.vq_ops import *
+
 
 __all__ = ['resnet_quantized']
 
-def QuantizedConv3x3(in_planes, out_planes, stride=1):
+
+
+def QuantizedConv3x3(args, in_planes, out_planes, stride=1):
     "3x3 convolution with padding"
-    return QuantizedConv2d(in_planes, out_planes, kernel_size=3, stride=stride,
+    return args.conv2d(args, in_planes, out_planes, kernel_size=3, stride=stride,
                            padding=1, bias=False)
 
-def conv3x3(in_planes, out_planes, stride=1):
-    "3x3 convolution with padding"
-    return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
-                     padding=1, bias=False)
 
-def init_model(model):
+def init_model(model, args):
     for m in model.modules():
-        if isinstance(m, QuantizedConv2d):
+        if isinstance(m, args.conv2d):
             n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
             m.weight.data.normal_(0, math.sqrt(2. / n))
         elif isinstance(m, nn.BatchNorm2d):
@@ -28,13 +25,13 @@ def init_model(model):
 class BasicBlock(nn.Module):
     expansion = 1
 
-    def __init__(self, inplanes, planes, stride=1, downsample=None,do_bntan=True):
+    def __init__(self, args, inplanes, planes, stride=1, downsample=None,do_bntan=True):
         super(BasicBlock, self).__init__()
 
-        self.conv1 = QuantizedConv3x3(inplanes, planes, stride)
+        self.conv1 = QuantizedConv3x3(args, inplanes, planes, stride)
         self.bn1 = nn.BatchNorm2d(planes)
         self.tanh1 = nn.Hardtanh(inplace=True)
-        self.conv2 = QuantizedConv3x3(planes, planes)
+        self.conv2 = QuantizedConv3x3(args, planes, planes)
         self.tanh2 = nn.Hardtanh(inplace=True)
         self.bn2 = nn.BatchNorm2d(planes)
 
@@ -69,14 +66,14 @@ class BasicBlock(nn.Module):
 class Bottleneck(nn.Module):
     expansion = 4
 
-    def __init__(self, inplanes, planes, stride=1, downsample=None):
+    def __init__(self, args, inplanes, planes, stride=1, downsample=None):
         super(Bottleneck, self).__init__()
-        self.conv1 = QuantizedConv2d(inplanes, planes, kernel_size=1, bias=False)
+        self.conv1 = args.conv2d(args, inplanes, planes, kernel_size=1, bias=False)
         self.bn1 = nn.BatchNorm2d(planes)
-        self.conv2 = QuantizedConv2d(planes, planes, kernel_size=3, stride=stride,
+        self.conv2 = args.conv2d(args, planes, planes, kernel_size=3, stride=stride,
                                      padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(planes)
-        self.conv3 = QuantizedConv2d(planes, planes * 4, kernel_size=1, bias=False)
+        self.conv3 = args.conv2d(args, planes, planes * 4, kernel_size=1, bias=False)
         self.bn3 = nn.BatchNorm2d(planes * 4)
         self.tanh = nn.Hardtanh(inplace=True)
         self.downsample = downsample
@@ -112,21 +109,21 @@ class ResNet(nn.Module):
     def __init__(self):
         super(ResNet, self).__init__()
 
-    def _make_layer(self, block, planes, blocks, stride=1,do_bntan=True):
+    def _make_layer(self, args, block, planes, blocks, stride=1,do_bntan=True):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
-                QuantizedConv2d(self.inplanes, planes * block.expansion,
+                args.conv2d(args, self.inplanes, planes * block.expansion,
                                 kernel_size=1, stride=stride, bias=False),
                 nn.BatchNorm2d(planes * block.expansion),
             )
 
         layers = []
-        layers.append(block(self.inplanes, planes, stride, downsample))
+        layers.append(block(args, self.inplanes, planes, stride, downsample))
         self.inplanes = planes * block.expansion
         for i in range(1, blocks-1):
-            layers.append(block(self.inplanes, planes))
-        layers.append(block(self.inplanes, planes,do_bntan=do_bntan))
+            layers.append(block(args, self.inplanes, planes))
+        layers.append(block(args, self.inplanes, planes, do_bntan=do_bntan))
         return nn.Sequential(*layers)
 
     def forward(self, x):
@@ -152,23 +149,23 @@ class ResNet(nn.Module):
 
 class ResNet_imagenet(ResNet):
 
-    def __init__(self, num_classes=1000,
+    def __init__(self, args, num_classes=1000,
                  block=Bottleneck, layers=[3, 4, 23, 3]):
         super(ResNet_imagenet, self).__init__()
         self.inplanes = 64
-        self.conv1 = QuantizedConv2d(3, 64, kernel_size=7, stride=2, padding=3,
+        self.conv1 = args.conv2d(args, 3, 64, kernel_size=7, stride=2, padding=3,
                                      bias=False)
         self.bn1 = nn.BatchNorm2d(64)
         self.tanh = nn.Hardtanh(inplace=True)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        self.layer1 = self._make_layer(block, 64, layers[0])
-        self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
-        self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
-        self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
+        self.layer1 = self._make_layer(args, block, 64, layers[0])
+        self.layer2 = self._make_layer(args, block, 128, layers[1], stride=2)
+        self.layer3 = self._make_layer(args, block, 256, layers[2], stride=2)
+        self.layer4 = self._make_layer(args, block, 512, layers[3], stride=2)
         self.avgpool = nn.AvgPool2d(7)
-        self.fc = QuantizedLinear(512 * block.expansion, num_classes)
+        self.fc = args.linear(args, 512 * block.expansion, num_classes)
 
-        init_model(self)
+        init_model(self, args)
         self.regime = {
             0: {'optimizer': 'SGD', 'lr': 1e-1,
                 'weight_decay': 1e-4, 'momentum': 0.9},
@@ -180,29 +177,29 @@ class ResNet_imagenet(ResNet):
 
 class ResNet_cifar10(ResNet):
 
-    def __init__(self, num_classes=10,
+    def __init__(self, args, num_classes=10,
                  block=BasicBlock, depth=18):
         super(ResNet_cifar10, self).__init__()
         self.inflate = 5
         self.inplanes = 16*self.inflate
         n = int((depth - 2) / 6)
-        self.conv1 = QuantizedConv2d(3, 16 * self.inflate, kernel_size=3, stride=1, padding=1,
+        self.conv1 = args.conv2d(args, 3, 16 * self.inflate, kernel_size=3, stride=1, padding=1,
                                      bias=False)
         self.maxpool = lambda x: x
         self.bn1 = nn.BatchNorm2d(16*self.inflate)
         self.tanh1 = nn.Hardtanh(inplace=True)
         self.tanh2 = nn.Hardtanh(inplace=True)
-        self.layer1 = self._make_layer(block, 16*self.inflate, n)
-        self.layer2 = self._make_layer(block, 32*self.inflate, n, stride=2)
-        self.layer3 = self._make_layer(block, 64*self.inflate, n, stride=2,do_bntan=False)
+        self.layer1 = self._make_layer(args, block, 16*self.inflate, n)
+        self.layer2 = self._make_layer(args, block, 32*self.inflate, n, stride=2)
+        self.layer3 = self._make_layer(args, block, 64*self.inflate, n, stride=2,do_bntan=False)
         self.layer4 = lambda x: x
         self.avgpool = nn.AvgPool2d(8)
         self.bn2 = nn.BatchNorm1d(64*self.inflate)
         self.bn3 = nn.BatchNorm1d(num_classes)
         self.logsoftmax = nn.LogSoftmax()
-        self.fc = QuantizedLinear(64 * self.inflate, num_classes)
+        self.fc = args.linear(args, 64 * self.inflate, num_classes)
 
-        init_model(self)
+        init_model(self, args)
         #self.regime = {
         #    0: {'optimizer': 'SGD', 'lr': 1e-1,
         #        'weight_decay': 1e-4, 'momentum': 0.9},
@@ -220,37 +217,37 @@ class ResNet_cifar10(ResNet):
 
 
 def resnet_quantized(**kwargs):
-    num_classes, depth, dataset = map(
-        kwargs.get, ['num_classes', 'depth', 'dataset'])
+    num_classes, depth, dataset, args = map(
+        kwargs.get, ['num_classes', 'depth', 'dataset', 'args'])
     print("num_classes", num_classes)
     if dataset == 'imagenet':
         num_classes = num_classes or 1000
         depth = depth or 50
         if depth == 18:
-            return ResNet_imagenet(num_classes=num_classes,
+            return ResNet_imagenet(args=args, num_classes=num_classes,
                                    block=BasicBlock, layers=[2, 2, 2, 2])
         if depth == 34:
-            return ResNet_imagenet(num_classes=num_classes,
+            return ResNet_imagenet(args=args, num_classes=num_classes,
                                    block=BasicBlock, layers=[3, 4, 6, 3])
         if depth == 50:
-            return ResNet_imagenet(num_classes=num_classes,
+            return ResNet_imagenet(args=args, num_classes=num_classes,
                                    block=Bottleneck, layers=[3, 4, 6, 3])
         if depth == 101:
-            return ResNet_imagenet(num_classes=num_classes,
+            return ResNet_imagenet(args=args, num_classes=num_classes,
                                    block=Bottleneck, layers=[3, 4, 23, 3])
         if depth == 152:
-            return ResNet_imagenet(num_classes=num_classes,
+            return ResNet_imagenet(args=args, num_classes=num_classes,
                                    block=Bottleneck, layers=[3, 8, 36, 3])
 
     elif dataset == 'cifar10':
         num_classes = num_classes or 10
         depth = depth or 18
-        return ResNet_cifar10(num_classes=num_classes,
+        return ResNet_cifar10(args=args, num_classes=num_classes,
                               block=BasicBlock, depth=depth)
 
     elif dataset == 'cifar100':
         num_classes = num_classes or 100
         depth = depth or 18
         print("num_classes", num_classes)
-        return ResNet_cifar10(num_classes=num_classes,
+        return ResNet_cifar10(args=args, num_classes=num_classes,
                               block=BasicBlock, depth=depth)
