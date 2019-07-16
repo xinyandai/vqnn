@@ -9,8 +9,9 @@ _dataset_path = {
     'stl10': os.path.join(_DATASETS_MAIN_PATH, 'STL10'),
     'mnist': os.path.join(_DATASETS_MAIN_PATH, 'MNIST'),
     'imagenet': {
-        'train': os.path.join(_DATASETS_MAIN_PATH, 'ImageNet/train'),
-        'val': os.path.join(_DATASETS_MAIN_PATH, 'ImageNet/val')
+        'train': '/data/dataset/ILSVRC2012/ILSVRC2012_img_train',
+        'val': '/data/dataset/ILSVRC2012/ILSVRC2012_img_val',
+        'test': '/data/dataset/ILSVRC2012/ILSVRC2012_img_test',
     }
 }
 

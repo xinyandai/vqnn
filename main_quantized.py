@@ -75,7 +75,7 @@ def get_operators(args):
     elif args.quantize == "BC":
         return vq.BNNLinear, vq.BNNConv2d
     elif args.quantize == "identical":
-        return nn.Linear, nn.Conv2d
+        return vq.Linear, vq.Conv2d
     elif args.quantize == "VQ":
         return vq.VQLinear, vq.VQConv2d
 
