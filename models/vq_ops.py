@@ -7,9 +7,23 @@ import torch.nn.functional as F
 code_books = {}
 
 
+def ivecs_read(fname):
+    a = np.fromfile(fname, dtype='int32')
+    d = a[0]
+    return a.reshape(-1, d + 1)[:, 1:].copy()
+
+
+def fvecs_read(fname):
+    return ivecs_read(fname).view('float32')
+
+
 def get_code_book(args, dim, ks):
     if (dim, ks) not in code_books:
-        book = torch.randn(size=(ks, dim))
+        location = './codebooks/{}/angular_dim_{}_Ks_{}.fvecs'
+        location = location.format('learned_codebook', dim, ks)
+        codewords = fvecs_read(location)
+        book = torch.from_numpy(codewords)
+
         if args.gpus is not None:
             book = book.cuda()
         book /= torch.max(torch.abs(book), dim=1, keepdim=True)[0]
@@ -97,12 +111,18 @@ class _VQConv2dFunction(torch.autograd.Function):
         return grad_input, grad_weight, grad_bias
 
 
-class _LinearQuantize(object):
-    def __init__(self, args, dim, ks):
-        self.dim = dim
-        self.code_book = get_code_book(args, dim, ks)
+class VQLinear(nn.Linear):
+    def __init__(self, args, in_features, out_features, bias=True):
+        super(VQLinear, self).__init__(
+            in_features, out_features, bias)
+        self.codes = None
+        self.args = args
+        self.dim = args.dim
+        self.ks = args.ks
+        self.register_buffer("code_book",
+                             get_code_book(args, self.dim, self.ks))
 
-    def __call__(self, input, tensor_):
+    def quantize(self, tensor_):
         tensor = tensor_.clone()
         x = tensor.view(-1, self.dim)
         codes = vq(x, self.code_book)
@@ -110,42 +130,16 @@ class _LinearQuantize(object):
             self.code_book, 0, codes, out=x[:, :])
         return tensor, codes
 
-
-class _ConvQuantize(object):
-    def __init__(self, args, dim, ks):
-        self.dim = dim
-        self.code_book = get_code_book(args, dim, ks)
-
-    def __call__(self, input, tensor_):
-        tensor = tensor_.permute(0, 2, 3, 1).contiguous()
-        x = tensor.view(-1, self.dim)
-        codes = vq(x, self.code_book)
-        torch.index_select(
-            self.code_book, 0, codes, out=x[:, :])
-        return tensor.permute(0, 3, 1, 2), codes
-
-
-class VQLinear(nn.Linear):
-    def __init__(self, args, in_features, out_features, bias=True):
-        super(VQLinear, self).__init__(
-            in_features, out_features, bias)
-        self.quantize = _LinearQuantize(args=args, dim=args.dim, ks=args.ks)
-        self.codes = None
-        self.args = args
-
     def forward(self, input):
-
-        if not hasattr(self.weight,'org'):
+        if not hasattr(self.weight, 'org'):
             self.weight.org = self.weight.data.clone()
-
-        # quantize weight, decompress it to self.weight, while the codes
-        # is saved and then calculate the linear multiplication result
-        self.weight.data, self.codes = self.quantize(input, self.weight.org)
+        # quantize weight nad decompress it to self.weight
+        self.weight.data, self.codes = self.quantize(self.weight.org)
         out = nn.functional.linear(input, self.weight)
         # out = _VQLinearFunction.apply(
         #     input, self.weight, self.quantize.code_book, self.codes)
-        if not self.bias is None:
-            self.bias.org=self.bias.data.clone()
+        if self.bias is not None:
+            self.bias.org = self.bias.data.clone()
             out += self.bias.view(1, -1).expand_as(out)
 
         return out
@@ -158,22 +152,31 @@ class VQConv2d(nn.Conv2d):
         super(VQConv2d, self).__init__(
             in_channels, out_channels, kernel_size,
             stride, padding, dilation, groups, bias)
-        dim = 3 if in_channels == 3 else args.dim
-        self.quantize =  _ConvQuantize(args=args, dim=dim, ks=args.ks)
         self.codes = None
         self.args = args
+        self.dim = 3 if in_channels == 3 else args.dim
+        self.ks = args.ks
+        self.register_buffer("code_book",
+                             get_code_book(args, self.dim, self.ks))
+
+    def quantize(self, tensor_):
+        tensor = tensor_.permute(0, 2, 3, 1).contiguous()
+        x = tensor.view(-1, self.dim)
+        codes = vq(x, self.code_book)
+        torch.index_select(
+            self.code_book, 0, codes, out=x[:, :])
+        return tensor.permute(0, 3, 1, 2), codes
 
     def forward(self, input):
-        if not hasattr(self.weight,'org'):
-            self.weight.org=self.weight.data.clone()
-        # quantize weight, decompress it to self.weight, while the codes
-        # is saved and then calculate the linear multiplication result
-        self.weight.data, self.code = self.quantize(input, self.weight.org)
+        if not hasattr(self.weight, 'org'):
+            self.weight.org = self.weight.data.clone()
+        # quantize weight, decompress it to self.weight
+        self.weight.data, self.codes = self.quantize(self.weight.org)
         out = nn.functional.conv2d(
             input, self.weight, None, self.stride,
             self.padding, self.dilation, self.groups)
 
-        if not self.bias is None:
+        if self.bias is not None:
             self.bias.org=self.bias.data.clone()
             out += self.bias.view(1, -1, 1, 1).expand_as(out)
 

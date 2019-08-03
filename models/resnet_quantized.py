@@ -183,8 +183,9 @@ class ResNet_cifar10(ResNet):
         self.inflate = 5
         self.inplanes = 16*self.inflate
         n = int((depth - 2) / 6)
-        self.conv1 = args.conv2d(args, 3, 16 * self.inflate, kernel_size=3, stride=1, padding=1,
-                                     bias=False)
+        self.conv1 = args.conv2d(args, 3, 16 * self.inflate,
+                                 kernel_size=3, stride=1,
+                                 padding=1, bias=False)
         self.maxpool = lambda x: x
         self.bn1 = nn.BatchNorm2d(16*self.inflate)
         self.tanh1 = nn.Hardtanh(inplace=True)
@@ -200,13 +201,7 @@ class ResNet_cifar10(ResNet):
         self.fc = args.linear(args, 64 * self.inflate, num_classes)
 
         init_model(self, args)
-        #self.regime = {
-        #    0: {'optimizer': 'SGD', 'lr': 1e-1,
-        #        'weight_decay': 1e-4, 'momentum': 0.9},
-        #    81: {'lr': 1e-4},
-        #    122: {'lr': 1e-5, 'weight_decay': 0},
-        #    164: {'lr': 1e-6}
-        #}
+
         self.regime = {
             0: {'optimizer': 'Adam', 'lr': 5e-3},
             101: {'lr': 1e-3},
