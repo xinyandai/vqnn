@@ -20,7 +20,7 @@ def fvecs_read(fname):
 def get_code_book(args, dim, ks):
     if (dim, ks) not in code_books:
         location = './codebooks/{}/angular_dim_{}_Ks_{}.fvecs'
-        location = location.format('learned_codebook', dim, ks)
+        location = location.format('kmeans_codebook', dim, ks)
         codewords = fvecs_read(location)
         book = torch.from_numpy(codewords)
 
