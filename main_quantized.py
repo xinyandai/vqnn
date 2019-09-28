@@ -14,6 +14,9 @@ from utils import *
 from datetime import datetime
 from ast import literal_eval
 
+from models.vq_optimizer import VQSGD
+# import os
+# os.environ['CUDA_LAUNCH_BLOCKING'] = "0"
 
 model_names = sorted(name for name in models.__dict__
                      if name.islower() and not name.startswith("__")
@@ -68,6 +71,7 @@ parser.add_argument('--ks', type=int, default=16)
 parser.add_argument('--quantize', type=str, default='VQ',
                     choices=['VQ', 'BNN', 'BC', 'identical'])
 
+
 def get_operators(args):
     import models.vq_ops as vq
     if args.quantize == "BNN":
@@ -80,6 +84,7 @@ def get_operators(args):
         return vq.VQLinear, vq.VQConv2d
 
     assert False, "No matched for {}.".format(args.quantize)
+
 
 def main():
     global args, best_prec1
@@ -114,7 +119,8 @@ def main():
     # create model
     logging.info("creating model %s", args.model)
     model = models.__dict__[args.model]
-    model_config = {'input_size': args.input_size, 'dataset': args.dataset, 'args': args}
+    model_config = {'input_size': args.input_size,
+                    'dataset': args.dataset, 'args': args}
 
     if args.model_config is not '':
         model_config = dict(model_config, **literal_eval(args.model_config))
@@ -162,6 +168,7 @@ def main():
                                            'lr': args.lr,
                                            'momentum': args.momentum,
                                            'weight_decay': args.weight_decay}})
+
     # define loss function (criterion) and optimizer
     criterion = getattr(model, 'criterion', nn.CrossEntropyLoss)()
     criterion.type(args.type)
@@ -184,12 +191,11 @@ def main():
         num_workers=args.workers, pin_memory=True)
 
     optimizer = torch.optim.SGD(model.parameters(), lr=args.lr)
+    # optimizer = VQSGD(args, model.parameters(), lr=args.lr)
     logging.info('training regime: %s', regime)
 
-
     for epoch in range(args.start_epoch, args.epochs):
-        optimizer = adjust_optimizer(optimizer, epoch, regime)
-
+        # optimizer = adjust_optimizer(optimizer, epoch, regime)
         # train for one epoch
         train_loss, train_prec1, train_prec5 = train(
             train_loader, model, criterion, epoch, optimizer)
@@ -224,11 +230,11 @@ def main():
         results.add(epoch=epoch + 1, train_loss=train_loss, val_loss=val_loss,
                     train_error1=100 - train_prec1, val_error1=100 - val_prec1,
                     train_error5=100 - train_prec5, val_error5=100 - val_prec5)
-        #results.plot(x='epoch', y=['train_loss', 'val_loss'],
+        # results.plot(x='epoch', y=['train_loss', 'val_loss'],
         #             title='Loss', ylabel='loss')
-        #results.plot(x='epoch', y=['train_error1', 'val_error1'],
+        # results.plot(x='epoch', y=['train_error1', 'val_error1'],
         #             title='Error@1', ylabel='error %')
-        #results.plot(x='epoch', y=['train_error5', 'val_error5'],
+        # results.plot(x='epoch', y=['train_error5', 'val_error5'],
         #             title='Error@5', ylabel='error %')
         results.save()
 
@@ -269,13 +275,12 @@ def forward(data_loader, model, criterion, epoch=0, training=True, optimizer=Non
             optimizer.zero_grad()
             loss.backward()
             for p in list(model.parameters()):
-                if hasattr(p,'org'):
+                if hasattr(p, 'org'):
                     p.data.copy_(p.org)
             optimizer.step()
             for p in list(model.parameters()):
-                if hasattr(p,'org'):
-                    p.org.copy_(p.data.clamp_(-1,1))
-
+                if hasattr(p, 'org'):
+                    p.org.copy_(p.data.clamp_(-1, 1))
 
         # measure elapsed time
         batch_time.update(time.time() - end)

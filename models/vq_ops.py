@@ -27,7 +27,7 @@ def get_code_book(args, dim, ks):
         if args.gpus is not None:
             book = book.cuda()
         book /= torch.max(torch.abs(book), dim=1, keepdim=True)[0]
-        code_books[(dim, ks)] = book
+        code_books[(dim , ks)] = book
         return book
     else:
         return code_books[(dim, ks)]
@@ -45,10 +45,15 @@ def euclid(q, x):
 def vq(q, x):
     return torch.argmin(euclid(q, x), dim=1)
 
-
+# Kmeans
 def lloyd(X, Ks, n_iter = 20):
+    # randomly pick Ks point to be the centroids 
     centroids = X[np.random.choice(len(X), Ks)]
+    
+    # assign X to nearest centroid 
     codes = vq(X, centroids)
+    
+    # update 
     for _ in range(n_iter):
         for index in range(Ks):
             indices = torch.nonzero(codes == index).squeeze()
@@ -61,6 +66,7 @@ def lloyd(X, Ks, n_iter = 20):
 class _VQLinearFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input, weight, book=None, idx=None):
+        # what is idx?
         ctx.save_for_backward(input, weight)
         if book is None:
             output = input.mm(weight.t())
@@ -123,6 +129,7 @@ class VQLinear(nn.Linear):
                              get_code_book(args, self.dim, self.ks))
 
     def quantize(self, tensor_):
+        # return quantized tensor and the codes in codebooks
         tensor = tensor_.clone()
         x = tensor.view(-1, self.dim)
         codes = vq(x, self.code_book)
@@ -133,17 +140,19 @@ class VQLinear(nn.Linear):
     def forward(self, input):
         if not hasattr(self.weight, 'org'):
             self.weight.org = self.weight.data.clone()
-        # quantize weight nad decompress it to self.weight
+        # quantize weight and decompress it to self.weight
+        # self.weight.data = , 梯度没算进来的
         self.weight.data, self.codes = self.quantize(self.weight.org)
         out = nn.functional.linear(input, self.weight)
         # out = _VQLinearFunction.apply(
         #     input, self.weight, self.quantize.code_book, self.codes)
+        
+        # do we need to quantize bias?
         if self.bias is not None:
             self.bias.org = self.bias.data.clone()
             out += self.bias.view(1, -1).expand_as(out)
 
         return out
-
 
 class VQConv2d(nn.Conv2d):
 
@@ -158,8 +167,9 @@ class VQConv2d(nn.Conv2d):
         self.ks = args.ks
         self.register_buffer("code_book",
                              get_code_book(args, self.dim, self.ks))
-
+    
     def quantize(self, tensor_):
+        # input is in shape of (N, C_in, H, W)
         tensor = tensor_.permute(0, 2, 3, 1).contiguous()
         x = tensor.view(-1, self.dim)
         codes = vq(x, self.code_book)
@@ -199,7 +209,6 @@ class BCLinear(nn.Linear):
 
         return out
 
-
 class BCConv2d(nn.Conv2d):
 
     def __init__(self, args, in_channels, out_channels, kernel_size,
@@ -221,13 +230,13 @@ class BCConv2d(nn.Conv2d):
 
         return out
 
-
 class BNNLinear(BCLinear):
     def __init__(self, args, in_features, out_features, bias=True):
         super(BNNLinear, self).__init__(
             args, in_features, out_features, bias)
 
     def forward(self, input):
+        # 第一层不能sign
         if input.size(1) != 784:
             input.data = input.data.sign()
         return super(BNNLinear, self).forward(input)
@@ -242,6 +251,7 @@ class BNNConv2d(BCConv2d):
             stride, padding, dilation, groups, bias)
 
     def forward(self, input):
+        # 第一层
         if input.size(1) != 3:
             input.data =  input.data.sign()
         return super(BNNConv2d, self).forward(input)

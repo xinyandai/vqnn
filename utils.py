@@ -6,6 +6,8 @@ import pandas as pd
 from bokeh.io import output_file, save, show
 from bokeh.plotting import figure
 from bokeh.layouts import column
+from models.vq_optimizer import VQSGD
+
 #from bokeh.charts import Line, defaults
 #
 #defaults.width = 800
@@ -63,7 +65,7 @@ class ResultsLog(object):
             plot = column(*self.figures)
             show(plot)
 
-    #def plot(self, *kargs, **kwargs):
+    # def plot(self, *kargs, **kwargs):
     #    line = Line(data=self.results, *kargs, **kwargs)
     #    self.figures.append(line)
 
@@ -101,6 +103,7 @@ class AverageMeter(object):
         self.count += n
         self.avg = self.sum / self.count
 
+
 __optimizers = {
     'SGD': torch.optim.SGD,
     'ASGD': torch.optim.ASGD,
@@ -109,7 +112,8 @@ __optimizers = {
     'Adagrad': torch.optim.Adagrad,
     'Adadelta': torch.optim.Adadelta,
     'Rprop': torch.optim.Rprop,
-    'RMSprop': torch.optim.RMSprop
+    'RMSprop': torch.optim.RMSprop,
+    'VQSGD': VQSGD,
 }
 
 
