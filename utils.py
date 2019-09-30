@@ -6,7 +6,6 @@ import pandas as pd
 from bokeh.io import output_file, save, show
 from bokeh.plotting import figure
 from bokeh.layouts import column
-from models.vq_optimizer import VQSGD
 
 #from bokeh.charts import Line, defaults
 #
@@ -113,13 +112,13 @@ __optimizers = {
     'Adadelta': torch.optim.Adadelta,
     'Rprop': torch.optim.Rprop,
     'RMSprop': torch.optim.RMSprop,
-    'VQSGD': VQSGD,
 }
 
 
 def adjust_optimizer(optimizer, epoch, config):
     """Reconfigures the optimizer according to epoch and config dict"""
     def modify_optimizer(optimizer, setting):
+        # if config is a function, then return a setting
         if 'optimizer' in setting:
             optimizer = __optimizers[setting['optimizer']](
                 optimizer.param_groups)
@@ -162,3 +161,26 @@ def accuracy(output, target, topk=(1,)):
     # kernel_img.add_(-kernel_img.min())
     # kernel_img.mul_(255 / kernel_img.max())
     # save_image(kernel_img, 'kernel%s.jpg' % epoch)
+
+
+def split_parameters(model):
+    import torch.nn as nn
+    linear_group = []
+    conv2d_group = []
+    other_group = []
+    for name, param in model.named_parameters():
+        if 'fc' in name:
+            if 'weight' in name:
+                linear_group.append(param)
+            else:
+                other_group.append(param)
+        elif 'conv' in name:
+            if 'weight' in name:
+                conv2d_group.append(param)
+            else:
+                other_group.append(param)
+        else:
+            other_group.append(param)
+
+    groups = [{'params':linear_group,'name':'linear'},{'params':conv2d_group,'name':'conv2d'},{'params':other_group,'name':'others'}]
+    return groups

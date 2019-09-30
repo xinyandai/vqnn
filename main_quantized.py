@@ -14,7 +14,7 @@ from utils import *
 from datetime import datetime
 from ast import literal_eval
 
-from models.vq_optimizer import VQSGD
+from models.vq_optimizer import VQSGD, VQAdam
 # import os
 # os.environ['CUDA_LAUNCH_BLOCKING'] = "0"
 
@@ -45,7 +45,7 @@ parser.add_argument('--gpus', default='0',
                     help='gpus used for training - e.g 0,1,3')
 parser.add_argument('-j', '--workers', default=8, type=int, metavar='N',
                     help='number of data loading workers (default: 8)')
-parser.add_argument('--epochs', default=2500, type=int, metavar='N',
+parser.add_argument('--epochs', default=250, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
@@ -63,6 +63,8 @@ parser.add_argument('--print-freq', '-p', default=10, type=int,
                     metavar='N', help='print frequency (default: 10)')
 parser.add_argument('--resume', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
+parser.add_argument('--rate', default=1.0, type=float, metavar='OPT',
+                    help='rate for VQ optimizer')
 parser.add_argument('-e', '--evaluate', type=str, metavar='FILE',
                     help='evaluate model FILE on validation set')
 
@@ -190,9 +192,20 @@ def main():
         batch_size=args.batch_size, shuffle=True,
         num_workers=args.workers, pin_memory=True)
 
-    optimizer = torch.optim.SGD(model.parameters(), lr=args.lr)
-    # optimizer = VQSGD(args, model.parameters(), lr=args.lr)
-    logging.info('training regime: %s', regime)
+    param_groups = split_parameters(model)
+    if args.optimizer == 'SGD':
+        optimizer = torch.optim.SGD(param_groups, lr=args.lr)
+    elif args.optimizer == 'Adam':
+        optimizer = torch.optim.Adam(param_groups, lr=args.lr)
+    elif args.optimizer == 'VQSGD':
+        optimizer = VQSGD(args, param_groups, lr=args.lr)
+    elif args.optimizer == 'VQAdam':
+        optimizer = VQAdam(args, param_groups, lr=args.lr)
+    else:
+        logging.error("{} is not supported".format(args.optimizer))
+#
+    # logging.info('training regime: %s', regime)
+    logging.info('using optimizer: {}'.format(args.optimizer))
 
     for epoch in range(args.start_epoch, args.epochs):
         # optimizer = adjust_optimizer(optimizer, epoch, regime)
@@ -278,9 +291,9 @@ def forward(data_loader, model, criterion, epoch=0, training=True, optimizer=Non
                 if hasattr(p, 'org'):
                     p.data.copy_(p.org)
             optimizer.step()
-            for p in list(model.parameters()):
-                if hasattr(p, 'org'):
-                    p.org.copy_(p.data.clamp_(-1, 1))
+            # for p in list(model.parameters()):
+            #     if hasattr(p, 'org'):
+            #         p.org.copy_(p.data.clamp_(-1, 1))
 
         # measure elapsed time
         batch_time.update(time.time() - end)
