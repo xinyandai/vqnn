@@ -76,7 +76,7 @@ class VQSGD(torch.optim.SGD):
                     p.data.add_(-group['lr'], d_p)
                 else:
                     if group['name'] == 'conv2d':
-                        tensor = p.data.clone().permute(0, 2, 3, 1).contiguous()
+                        tensor = p.data.clone().detach().permute(0, 2, 3, 1).contiguous()
                         p.data = self.vq_gd(
                             tensor, group['lr'], d_p).permute(0, 3, 1, 2)
                     else:
@@ -184,7 +184,7 @@ class VQAdam(torch.optim.Adam):
                     p.data.addcdiv_(-step_size, exp_avg, denom)
                 else:
                     if group['name'] == 'conv2d':
-                        tensor = p.data.clone().permute(0, 2, 3, 1).contiguous()
+                        tensor = p.data.clone().detach().permute(0, 2, 3, 1).contiguous()
                         p.data = self.vq_gd(
                             tensor, step_size, exp_avg / denom).permute(0, 3, 1, 2)
                     else:
