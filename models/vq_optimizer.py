@@ -1,6 +1,6 @@
 import torch
 import math
-from models.vq_ops import code_books, get_code_book, vq
+from models.vq_ops import get_code_book
 
 
 class VQSGD(torch.optim.SGD):
@@ -11,9 +11,9 @@ class VQSGD(torch.optim.SGD):
         self.ks = myargs.ks
         self.rate = myargs.rate
         print('VQSGD, rate = {}'.format(self.rate))
-        self.code_book = get_code_book(myargs, self.dim, self.ks)
 
     def vq_gd(self, p, lr, d_p):
+        code_books = get_code_book(self.args, self.dim, self.ks).to(p.device)
         l = 1 / self.rate * lr
         u = self.rate * lr
         x = p.data.reshape(-1, self.dim, 1)
@@ -21,7 +21,7 @@ class VQSGD(torch.optim.SGD):
         M = x.size(0)
         W = x.expand(-1, -1, self.ks)
         F = grad.expand(-1, -1, self.ks)
-        C = self.code_book.t().expand(M, self.dim, self.ks)
+        C = code_books.t().expand(M, self.dim, self.ks)
         Tu = C - W + F.mul(u)
         Tl = C - W + F.mul(l)
 
@@ -31,7 +31,7 @@ class VQSGD(torch.optim.SGD):
         codes = result.sum(dim=1).argmin(dim=1)
 
         p1 = torch.index_select(
-            self.code_book, 0, codes).reshape(p.data.shape)
+            code_books, 0, codes).reshape(p.data.shape)
         return p1
 
     def step(self, closure=None):
@@ -94,9 +94,9 @@ class VQAdam(torch.optim.Adam):
         self.ks = myargs.ks
         self.rate = myargs.rate
         print('VQAdam, rate = {}'.format(self.rate))
-        self.code_book = get_code_book(myargs, self.dim, self.ks)
 
     def vq_gd(self, p, lr, d_p):
+        code_books = get_code_book(self.args, self.dim, self.ks).to(p.device)
         l = 1 / self.rate * lr
         u = self.rate * lr
         x = p.data.reshape(-1, self.dim, 1)
@@ -104,7 +104,7 @@ class VQAdam(torch.optim.Adam):
         M = x.size(0)
         W = x.expand(-1, -1, self.ks)
         F = grad.expand(-1, -1, self.ks)
-        C = self.code_book.t().expand(M, self.dim, self.ks)
+        C = code_books.t().expand(M, self.dim, self.ks)
         Tu = C - W + F.mul(u)
         Tl = C - W + F.mul(l)
 
@@ -113,8 +113,7 @@ class VQAdam(torch.optim.Adam):
         result = 1/4 * r0.mul(r1)
         codes = result.sum(dim=1).argmin(dim=1)
 
-        p1 = torch.index_select(
-            self.code_book, 0, codes).reshape(p.data.shape)
+        p1 = torch.index_select(code_books, 0, codes).reshape(p.data.shape)
         return p1
 
     def step(self, closure=None):
@@ -188,6 +187,7 @@ class VQAdam(torch.optim.Adam):
                         p.data = self.vq_gd(
                             tensor, step_size, exp_avg / denom).permute(0, 3, 1, 2)
                     else:
-                        p.data = self.vq_gd(p, step_size, exp_avg / denom)
+                        p.data = self.vq_gd(
+                            p, step_size, exp_avg / denom)
 
         return loss

@@ -13,7 +13,6 @@ from preprocess import get_transform
 from utils import *
 from datetime import datetime
 from ast import literal_eval
-
 from models.vq_optimizer import VQSGD, VQAdam
 # import os
 # os.environ['CUDA_LAUNCH_BLOCKING'] = "0"
@@ -193,24 +192,38 @@ def main():
         num_workers=args.workers, pin_memory=True)
 
     param_groups = split_parameters(model)
-    optimizer = torch.optim.SGD(param_groups, lr=args.lr)
+    # optimizer = torch.optim.SGD(param_groups, lr=args.lr)
     regime[0]['optimizer'] = args.optimizer
-    # if args.optimizer == 'SGD':
-    #     optimizer = torch.optim.SGD(param_groups, lr=args.lr)
-    # elif args.optimizer == 'Adam':
-    #     optimizer = torch.optim.Adam(param_groups, lr=args.lr)
-    # elif args.optimizer == 'VQSGD':
-    #     optimizer = VQSGD(args, param_groups, lr=args.lr)
-    # elif args.optimizer == 'VQAdam':
-    #     optimizer = VQAdam(args, param_groups, lr=args.lr)
-    # else:
-    #     logging.error("{} is not supported".format(args.optimizer))
+    lr, weight_decay, momentum = args.lr, 0, 0
+    if 'lr' in regime[0]:
+        lr = regime[0]['lr']
+    if 'weight_decay' in regime[0]:
+        weight_decay = regime[0]['weight_decay']
+    if 'momentun' in regime[0]:
+        momentum = regime[0]['momentum']
+
+    if args.optimizer == 'SGD':
+        optimizer = torch.optim.SGD(
+            param_groups, lr=lr, weight_decay=weight_decay, momentum=momentum)
+    elif args.optimizer == 'Adam':
+        optimizer = torch.optim.Adam(
+            param_groups, lr=lr, weight_decay=weight_decay)
+    elif args.optimizer == 'VQSGD':
+        optimizer = VQSGD(args, param_groups, lr=lr,
+                          weight_decay=weight_decay, momentum=momentum)
+    elif args.optimizer == 'VQAdam':
+        optimizer = VQAdam(args, param_groups, lr=lr,
+                           weight_decay=weight_decay)
+    else:
+        logging.error("{} is not supported".format(args.optimizer))
 
     logging.info('training regime: %s', regime)
-    # logging.info('using optimizer: {}'.format(args.optimizer))
+    milestones = list(regime.keys())
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(
+        optimizer, milestones=milestones, gamma=0.1)
 
     for epoch in range(args.start_epoch, args.epochs):
-        optimizer = adjust_optimizer(optimizer, epoch, regime, args)
+        # optimizer = adjust_optimizer(optimizer, epoch, regime, args)
         # train for one epoch
         train_loss, train_prec1, train_prec5 = train(
             train_loader, model, criterion, epoch, optimizer)
@@ -252,6 +265,7 @@ def main():
         # results.plot(x='epoch', y=['train_error5', 'val_error5'],
         #             title='Error@5', ylabel='error %')
         results.save()
+        scheduler.step()
 
 
 def forward(data_loader, model, criterion, epoch=0, training=True, optimizer=None):
@@ -292,6 +306,7 @@ def forward(data_loader, model, criterion, epoch=0, training=True, optimizer=Non
             for p in list(model.parameters()):
                 if hasattr(p, 'org'):
                     p.data.copy_(p.org)
+
             optimizer.step()
             # for p in list(model.parameters()):
             #     if hasattr(p, 'org'):
