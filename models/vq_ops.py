@@ -147,7 +147,6 @@ class VQLinear(nn.Linear):
 
         return out
 
-
 class VQConv2d(nn.Conv2d):
 
     def __init__(self, args, in_channels, out_channels, kernel_size,

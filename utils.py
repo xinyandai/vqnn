@@ -6,7 +6,7 @@ import pandas as pd
 from bokeh.io import output_file, save, show
 from bokeh.plotting import figure
 from bokeh.layouts import column
-
+from models.vq_optimizer import VQSGD, VQAdam
 #from bokeh.charts import Line, defaults
 #
 #defaults.width = 800
@@ -112,16 +112,21 @@ __optimizers = {
     'Adadelta': torch.optim.Adadelta,
     'Rprop': torch.optim.Rprop,
     'RMSprop': torch.optim.RMSprop,
+    'VQSGD': VQSGD,
+    'VQAdam': VQAdam,
 }
 
 
-def adjust_optimizer(optimizer, epoch, config):
+def adjust_optimizer(optimizer, epoch, config, args=None):
     """Reconfigures the optimizer according to epoch and config dict"""
     def modify_optimizer(optimizer, setting):
         # if config is a function, then return a setting
         if 'optimizer' in setting:
-            optimizer = __optimizers[setting['optimizer']](
-                optimizer.param_groups)
+            if 'VQ' in setting['optimizer']:
+                optimizer = __optimizers[setting['optimizer']](
+                    args,optimizer.param_groups)
+            else:
+                optimizer = __optimizers[setting['optimizer']](optimizer.param_groups)
             logging.debug('OPTIMIZER - setting method = %s' %
                           setting['optimizer'])
         for param_group in optimizer.param_groups:

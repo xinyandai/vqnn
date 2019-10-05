@@ -193,22 +193,24 @@ def main():
         num_workers=args.workers, pin_memory=True)
 
     param_groups = split_parameters(model)
-    if args.optimizer == 'SGD':
-        optimizer = torch.optim.SGD(param_groups, lr=args.lr)
-    elif args.optimizer == 'Adam':
-        optimizer = torch.optim.Adam(param_groups, lr=args.lr)
-    elif args.optimizer == 'VQSGD':
-        optimizer = VQSGD(args, param_groups, lr=args.lr)
-    elif args.optimizer == 'VQAdam':
-        optimizer = VQAdam(args, param_groups, lr=args.lr)
-    else:
-        logging.error("{} is not supported".format(args.optimizer))
-#
-    # logging.info('training regime: %s', regime)
-    logging.info('using optimizer: {}'.format(args.optimizer))
+    optimizer = torch.optim.SGD(param_groups, lr=args.lr)
+    regime[0]['optimizer'] = args.optimizer
+    # if args.optimizer == 'SGD':
+    #     optimizer = torch.optim.SGD(param_groups, lr=args.lr)
+    # elif args.optimizer == 'Adam':
+    #     optimizer = torch.optim.Adam(param_groups, lr=args.lr)
+    # elif args.optimizer == 'VQSGD':
+    #     optimizer = VQSGD(args, param_groups, lr=args.lr)
+    # elif args.optimizer == 'VQAdam':
+    #     optimizer = VQAdam(args, param_groups, lr=args.lr)
+    # else:
+    #     logging.error("{} is not supported".format(args.optimizer))
+
+    logging.info('training regime: %s', regime)
+    # logging.info('using optimizer: {}'.format(args.optimizer))
 
     for epoch in range(args.start_epoch, args.epochs):
-        # optimizer = adjust_optimizer(optimizer, epoch, regime)
+        optimizer = adjust_optimizer(optimizer, epoch, regime, args)
         # train for one epoch
         train_loss, train_prec1, train_prec5 = train(
             train_loader, model, criterion, epoch, optimizer)

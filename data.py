@@ -14,9 +14,9 @@ _dataset_path = {
     'mnist': os.path.join(_DATASETS_MAIN_PATH, 'MNIST'),
 
     'imagenet': {
-        'train': _DATASETS_MAIN_PATH + 'ILSVRC2012_img_train',
-        'val': _DATASETS_MAIN_PATH + 'ILSVRC2012_img_val',
-        'test': _DATASETS_MAIN_PATH + 'ILSVRC2012_img_test',
+        'train': _IMAGE_NET_PATH + 'ILSVRC2012_img_train',
+        'val': _IMAGE_NET_PATH + 'ILSVRC2012_img_val',
+        'test': _IMAGE_NET_PATH + 'ILSVRC2012_img_test',
     }
 }
 
