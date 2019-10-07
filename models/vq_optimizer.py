@@ -11,9 +11,10 @@ class VQSGD(torch.optim.SGD):
         self.ks = myargs.ks
         self.rate = myargs.rate
         print('VQSGD, rate = {}'.format(self.rate))
+        self.code_books = get_code_book(self.args, self.dim, self.ks)
 
     def vq_gd(self, p, lr, d_p):
-        code_books = get_code_book(self.args, self.dim, self.ks).to(p.device)
+        code_books = self.code_books
         l = 1 / self.rate * lr
         u = self.rate * lr
         x = p.data.reshape(-1, self.dim, 1)
@@ -94,9 +95,10 @@ class VQAdam(torch.optim.Adam):
         self.ks = myargs.ks
         self.rate = myargs.rate
         print('VQAdam, rate = {}'.format(self.rate))
+        self.code_books = get_code_book(self.args, self.dim, self.ks)
 
     def vq_gd(self, p, lr, d_p):
-        code_books = get_code_book(self.args, self.dim, self.ks).to(p.device)
+        code_books = self.code_books
         l = 1 / self.rate * lr
         u = self.rate * lr
         x = p.data.reshape(-1, self.dim, 1)

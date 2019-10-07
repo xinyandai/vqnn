@@ -14,6 +14,7 @@ from utils import *
 from datetime import datetime
 from ast import literal_eval
 from models.vq_optimizer import VQSGD, VQAdam
+from models.vq_ops import code_books, get_code_book
 # import os
 # os.environ['CUDA_LAUNCH_BLOCKING'] = "0"
 
@@ -218,7 +219,8 @@ def main():
         logging.error("{} is not supported".format(args.optimizer))
 
     logging.info('training regime: %s', regime)
-    milestones = list(regime.keys())
+    milestones = list(regime.keys())[1:]
+    logging.info("scheduler milestones: {}".format(milestones))
     scheduler = torch.optim.lr_scheduler.MultiStepLR(
         optimizer, milestones=milestones, gamma=0.1)
 
@@ -289,6 +291,7 @@ def forward(data_loader, model, criterion, epoch=0, training=True, optimizer=Non
         # compute output
         output = model(input_var)
         loss = criterion(output, target_var)
+
         if type(output) is list:
             output = output[0]
 
@@ -308,12 +311,13 @@ def forward(data_loader, model, criterion, epoch=0, training=True, optimizer=Non
                     p.data.copy_(p.org)
 
             optimizer.step()
-            # for p in list(model.parameters()):
-            #     if hasattr(p, 'org'):
-            #         p.org.copy_(p.data.clamp_(-1, 1))
+            if 'VQ' not in args.optimizer:
+                for p in list(model.parameters()):
+                    if hasattr(p, 'org'):
+                        p.org.copy_(p.data.clamp_(-1, 1))
 
         # measure elapsed time
-        batch_time.update(time.time() - end)
+        batch_time.update(time.time () - end)
         end = time.time()
 
         if i % args.print_freq == 0:
