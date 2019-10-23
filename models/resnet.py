@@ -153,7 +153,7 @@ class ResNet_imagenet(ResNet):
         self.fc = args.linear(args, 512 * block.expansion, num_classes)
 
         init_model(args, self)
-        self.regime = {
+        self.regime_SGD = {
             0: {'optimizer': 'SGD', 'lr': 1e-1,
                 'weight_decay': 1e-4, 'momentum': 0.9},
             30: {'lr': 1e-2},
@@ -186,7 +186,15 @@ class ResNet_cifar10(ResNet):
         self.fc = args.linear(args, 64 * self.inflate, num_classes)
 
         init_model(args, self)
-        self.regime = {
+        self.regime_SGD = {
+            0: {'optimizer': 'SGD', 'lr': 1e-1,
+                'weight_decay': 1e-4, 'momentum': 0.9},
+            81: {'lr': 1e-2},
+            122: {'lr': 1e-3, 'weight_decay': 0},
+            164: {'lr': 1e-4}
+        }
+
+        self.regime_Adam = {
             0: {'optimizer': 'Adam', 'lr': 5e-3},
             101: {'lr': 1e-3},
             142: {'lr': 5e-4},

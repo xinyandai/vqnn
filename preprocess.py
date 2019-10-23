@@ -3,7 +3,7 @@ import torchvision.transforms as transforms
 import random
 
 __imagenet_stats = {'mean': [0.485, 0.456, 0.406],
-                   'std': [0.229, 0.224, 0.225]}
+                    'std': [0.229, 0.224, 0.225]}
 
 __imagenet_pca = {
     'eigval': torch.Tensor([0.2175, 0.0188, 0.0045]),
@@ -56,6 +56,8 @@ def inception_preproccess(input_size, normalize=__imagenet_stats):
         transforms.ToTensor(),
         transforms.Normalize(**normalize)
     ])
+
+
 def inception_color_preproccess(input_size, normalize=__imagenet_stats):
     return transforms.Compose([
         transforms.RandomSizedCrop(input_size),
@@ -103,6 +105,11 @@ def get_transform(name='imagenet', input_size=None,
             scale_size = scale_size or 32
             return scale_crop(input_size=input_size,
                               scale_size=scale_size, normalize=normalize)
+    elif name == 'mnist_linear':
+        return transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.1307,), (0.3081,))
+        ])
 
 
 class Lighting(object):

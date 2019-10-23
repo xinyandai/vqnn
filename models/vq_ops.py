@@ -61,7 +61,6 @@ def lloyd(X, Ks, n_iter=20):
 class _VQLinearFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input, weight, book=None, idx=None):
-        # what is idx?
         ctx.save_for_backward(input, weight)
         if book is None:
             output = input.mm(weight.t())
@@ -134,18 +133,17 @@ class VQLinear(nn.Linear):
     def forward(self, input):
         if not hasattr(self.weight, 'org'):
             self.weight.org = self.weight.data.clone()
+        # quantize weight nad decompress it to self.weight
         self.weight.data, self.codes = self.quantize(self.weight.org)
-        # self.weight.data, self.codes = self.quantize(self.weight.data)
-
         out = nn.functional.linear(input, self.weight)
         # out = _VQLinearFunction.apply(
         #     input, self.weight, self.quantize.code_book, self.codes)
-
         if self.bias is not None:
             self.bias.org = self.bias.data.clone()
             out += self.bias.view(1, -1).expand_as(out)
 
         return out
+
 
 class VQConv2d(nn.Conv2d):
 
@@ -157,13 +155,11 @@ class VQConv2d(nn.Conv2d):
         self.codes = None
         self.args = args
         self.dim = 3 if in_channels == 3 else args.dim
-        self.dim = args.dim
         self.ks = args.ks
         self.register_buffer("code_book",
                              get_code_book(args, self.dim, self.ks))
 
     def quantize(self, tensor_):
-        # input is in shape of (N, C_in, H, W)
         tensor = tensor_.permute(0, 2, 3, 1).contiguous()
         x = tensor.view(-1, self.dim)
         codes = vq(x, self.code_book)
@@ -174,9 +170,8 @@ class VQConv2d(nn.Conv2d):
     def forward(self, input):
         if not hasattr(self.weight, 'org'):
             self.weight.org = self.weight.data.clone()
+        # quantize weight, decompress it to self.weight
         self.weight.data, self.codes = self.quantize(self.weight.org)
-        # self.weight.data, self.codes = self.quantize(self.weight.data)
-
         out = nn.functional.conv2d(
             input, self.weight, None, self.stride,
             self.padding, self.dilation, self.groups)

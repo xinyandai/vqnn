@@ -11,9 +11,9 @@ Please install torch and torchvision by following the instructions at: http://py
 
 # To run resnet18 for cifar10 with [Binary Connection](https://arxiv.org/pdf/1511.00363):
 
-    python main_quantized.py --model resnet  --save temp_path --dataset cifar10 --quantize BC
+    python main_quantized.py --model resnet_quantized  --save temp_path --dataset cifar10 --quantize BC
 
-# To run resnet18 for cifar10 with [Binary Connection](https://arxiv.org/pdf/1511.00363):
+# To run resnet18 for cifar10 with [Binary Neural Networks](https://papers.nips.cc/paper/6573-binarized-neural-networks.pdf):
 
     python main_quantized.py --model resnet_quantized  --save temp_path --dataset cifar10 --quantize BNN
 
@@ -29,6 +29,6 @@ Please install torch and torchvision by following the instructions at: http://py
 
     python main_quantized.py --model alexnet  --save temp_path --dataset imagenet --quantize identical
 
-# To run resnet18 for cifar10 with original weight(org) and VQ-optimizer(e.g.VQAdam)
+# To run resnet18 for cifar10 with vq-optimizer
 
-    python main_quantized.py --model resnet  --save temp_path --dataset cifar10 --quantize VQ --optimizer VQAdam --lr 0.005
+    python main_quantized.py --model resnet  --save temp_path --dataset cifar10 --quantize VQ --user_vq_optim true

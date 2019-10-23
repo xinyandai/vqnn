@@ -112,19 +112,21 @@ __optimizers = {
     'Adadelta': torch.optim.Adadelta,
     'Rprop': torch.optim.Rprop,
     'RMSprop': torch.optim.RMSprop,
-    'VQSGD': VQSGD,
-    'VQAdam': VQAdam,
+}
+__vq_optimizers = {
+    'SGD': VQSGD,
+    'Adam': VQAdam,
 }
 
 
-def adjust_optimizer(optimizer, epoch, config, args=None):
+def adjust_optimizer(optimizer, epoch, config, myargs=None):
     """Reconfigures the optimizer according to epoch and config dict"""
     def modify_optimizer(optimizer, setting):
         # if config is a function, then return a setting
         if 'optimizer' in setting:
-            if 'VQ' in setting['optimizer']:
-                optimizer = __optimizers[setting['optimizer']](
-                    args,optimizer.param_groups)
+            if myargs.use_vq_optim:
+                optimizer = __vq_optimizers[setting['optimizer']](
+                    myargs, optimizer.param_groups)
             else:
                 optimizer = __optimizers[setting['optimizer']](optimizer.param_groups)
             logging.debug('OPTIMIZER - setting method = %s' %
@@ -146,7 +148,36 @@ def adjust_optimizer(optimizer, epoch, config, args=None):
 
     return optimizer
 
-def accuracy(output, target, topk=(1,)):
+
+
+def f1_metric(output, target, th=0.5):
+    from sklearn.metrics import f1_score
+    return f1_score(target.cpu(), output.sigmoid().cpu() > th, average="sample")
+
+def hl_metric(output, target,th=0.5):
+    from sklearn.metrics import hamming_loss
+    return hamming_loss(target.cpu(), output.sigmoid().cpu() > th)
+
+
+def accuracy(output, target):
+    """Computes the accuracy for multiple binary predictions"""
+    # print(output.shape,type(output),target.shape,type(target))
+    pred = output.max(1)[1] >= 0.5
+    truth = target >= 0.5
+    print(pred.shape,type(pred),truth,type(truth))
+    acc = pred.eq(truth).sum() / target.numel()
+    return acc
+
+def binary_metric(output, target):
+    pred = output.max(1)[1] > 0.5
+    truth = target > 0.5
+    tp = pred.mul(truth).sum(0).float()
+    tn = (1 - pred).mul(1 - truth).sum(0).float()
+    fp = pred.mul(1 - truth).sum(0).float()
+    fn = (1 - pred).mul(truth).sum(0).float()
+    return tp, tn, fp, fn
+
+def topk_precision(output, target, topk=(1,)):
     """Computes the precision@k for the specified values of k"""
     maxk = max(topk)
     batch_size = target.size(0)
@@ -173,6 +204,7 @@ def split_parameters(model):
     conv2d_group = []
     other_group = []
     for name, param in model.named_parameters():
+        print(name)
         if 'fc' in name:
             if 'weight' in name:
                 linear_group.append(param)
