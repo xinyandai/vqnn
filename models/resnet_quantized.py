@@ -5,11 +5,10 @@ from models.vq_ops import *
 __all__ = ['resnet_quantized']
 
 
-
 def QuantizedConv3x3(args, in_planes, out_planes, stride=1):
     "3x3 convolution with padding"
     return args.conv2d(args, in_planes, out_planes, kernel_size=3, stride=stride,
-                           padding=1, bias=False)
+                       padding=1, bias=False)
 
 
 def init_model(model, args):
@@ -25,7 +24,7 @@ def init_model(model, args):
 class BasicBlock(nn.Module):
     expansion = 1
 
-    def __init__(self, args, inplanes, planes, stride=1, downsample=None,do_bntan=True):
+    def __init__(self, args, inplanes, planes, stride=1, downsample=None, do_bntan=True):
         super(BasicBlock, self).__init__()
 
         self.conv1 = QuantizedConv3x3(args, inplanes, planes, stride)
@@ -36,7 +35,7 @@ class BasicBlock(nn.Module):
         self.bn2 = nn.BatchNorm2d(planes)
 
         self.downsample = downsample
-        self.do_bntan=do_bntan;
+        self.do_bntan = do_bntan
         self.stride = stride
 
     def forward(self, x):
@@ -49,10 +48,10 @@ class BasicBlock(nn.Module):
 
         out = self.conv2(out)
 
-
         if self.downsample is not None:
-            if residual.data.max()>1:
-                import pdb; pdb.set_trace()
+            if residual.data.max() > 1:
+                import pdb
+                pdb.set_trace()
             residual = self.downsample(residual)
 
         out += residual
@@ -68,12 +67,14 @@ class Bottleneck(nn.Module):
 
     def __init__(self, args, inplanes, planes, stride=1, downsample=None):
         super(Bottleneck, self).__init__()
-        self.conv1 = args.conv2d(args, inplanes, planes, kernel_size=1, bias=False)
+        self.conv1 = args.conv2d(
+            args, inplanes, planes, kernel_size=1, bias=False)
         self.bn1 = nn.BatchNorm2d(planes)
         self.conv2 = args.conv2d(args, planes, planes, kernel_size=3, stride=stride,
-                                     padding=1, bias=False)
+                                 padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(planes)
-        self.conv3 = args.conv2d(args, planes, planes * 4, kernel_size=1, bias=False)
+        self.conv3 = args.conv2d(
+            args, planes, planes * 4, kernel_size=1, bias=False)
         self.bn3 = nn.BatchNorm2d(planes * 4)
         self.tanh = nn.Hardtanh(inplace=True)
         self.downsample = downsample
@@ -81,7 +82,8 @@ class Bottleneck(nn.Module):
 
     def forward(self, x):
         residual = x
-        import pdb; pdb.set_trace()
+        import pdb
+        pdb.set_trace()
         out = self.conv1(x)
         out = self.bn1(out)
         out = self.tanh(out)
@@ -109,12 +111,12 @@ class ResNet(nn.Module):
     def __init__(self):
         super(ResNet, self).__init__()
 
-    def _make_layer(self, args, block, planes, blocks, stride=1,do_bntan=True):
+    def _make_layer(self, args, block, planes, blocks, stride=1, do_bntan=True):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
                 args.conv2d(args, self.inplanes, planes * block.expansion,
-                                kernel_size=1, stride=stride, bias=False),
+                            kernel_size=1, stride=stride, bias=False),
                 nn.BatchNorm2d(planes * block.expansion),
             )
 
@@ -154,7 +156,7 @@ class ResNet_imagenet(ResNet):
         super(ResNet_imagenet, self).__init__()
         self.inplanes = 64
         self.conv1 = args.conv2d(args, 3, 64, kernel_size=7, stride=2, padding=3,
-                                     bias=False)
+                                 bias=False)
         self.bn1 = nn.BatchNorm2d(64)
         self.tanh = nn.Hardtanh(inplace=True)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
@@ -166,7 +168,7 @@ class ResNet_imagenet(ResNet):
         self.fc = args.linear(args, 512 * block.expansion, num_classes)
 
         init_model(self, args)
-        self.regime = {
+        self.regime_SGD = {
             0: {'optimizer': 'SGD', 'lr': 1e-1,
                 'weight_decay': 1e-4, 'momentum': 0.9},
             30: {'lr': 1e-2},
@@ -191,8 +193,10 @@ class ResNet_cifar10(ResNet):
         self.tanh1 = nn.Hardtanh(inplace=True)
         self.tanh2 = nn.Hardtanh(inplace=True)
         self.layer1 = self._make_layer(args, block, 16*self.inflate, n)
-        self.layer2 = self._make_layer(args, block, 32*self.inflate, n, stride=2)
-        self.layer3 = self._make_layer(args, block, 64*self.inflate, n, stride=2,do_bntan=False)
+        self.layer2 = self._make_layer(
+            args, block, 32*self.inflate, n, stride=2)
+        self.layer3 = self._make_layer(
+            args, block, 64*self.inflate, n, stride=2, do_bntan=False)
         self.layer4 = lambda x: x
         self.avgpool = nn.AvgPool2d(8)
         self.bn2 = nn.BatchNorm1d(64*self.inflate)
@@ -202,12 +206,19 @@ class ResNet_cifar10(ResNet):
 
         init_model(self, args)
 
-        self.regime = {
+        self.regime_Adam = {
             0: {'optimizer': 'Adam', 'lr': 5e-3},
             101: {'lr': 1e-3},
             142: {'lr': 5e-4},
             184: {'lr': 1e-4},
             220: {'lr': 1e-5}
+        }
+        self.regime_SGD = {
+            0: {'optimizer': 'SGD', 'lr': 1e-1,
+                'weight_decay': 1e-4, 'momentum': 0.9},
+            81: {'lr': 1e-2},
+            122: {'lr': 1e-3, 'weight_decay': 0},
+            164: {'lr': 1e-4}
         }
 
 

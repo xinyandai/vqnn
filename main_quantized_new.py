@@ -13,7 +13,10 @@ from preprocess import get_transform
 from utils import *
 from datetime import datetime
 from ast import literal_eval
-
+from models.vq_optimizer import VQSGD, VQAdam
+from models.vq_ops import code_books, get_code_book
+# import os
+# os.environ['CUDA_LAUNCH_BLOCKING'] = "0"
 
 model_names = sorted(name for name in models.__dict__
                      if name.islower() and not name.startswith("__")
@@ -42,7 +45,7 @@ parser.add_argument('--gpus', default='0',
                     help='gpus used for training - e.g 0,1,3')
 parser.add_argument('-j', '--workers', default=8, type=int, metavar='N',
                     help='number of data loading workers (default: 8)')
-parser.add_argument('--epochs', default=100, type=int, metavar='N',
+parser.add_argument('--epochs', default=200, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
@@ -54,22 +57,23 @@ parser.add_argument('--lr', '--learning_rate', default=0.1, type=float,
                     metavar='LR', help='initial learning rate')
 parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
                     help='momentum')
-parser.add_argument('--use_vq_optim', default=False, type=bool, metavar='VQOPTIM',
-                    help='whether use VQ version optimizer')
+parser.add_argument('--gamma', default=0.1, type=float, metavar='G',
+                    help='scheduler gamma')
 parser.add_argument('--weight-decay', '--wd', default=1e-4, type=float,
                     metavar='W', help='weight decay (default: 1e-4)')
-parser.add_argument('--rate', default=4.0, type=float,
-                    metavar='r', help='vq optimizer dynamic lr rate (default: 4.0)')
 parser.add_argument('--print-freq', '-p', default=10, type=int,
                     metavar='N', help='print frequency (default: 10)')
 parser.add_argument('--resume', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
+parser.add_argument('--rate', default=1.0, type=float, metavar='OPT',
+                    help='rate for VQ optimizer')
 parser.add_argument('-e', '--evaluate', type=str, metavar='FILE',
                     help='evaluate model FILE on validation set')
 
 parser.add_argument('--dim', type=int, default=4)
 parser.add_argument('--ks', type=int, default=16)
-parser.add_argument('--quantize', type=str, default='VQ')
+parser.add_argument('--quantize', type=str, default='VQ',
+                    choices=['VQ', 'BNN', 'BC', 'identical'])
 
 
 def get_operators(args):
@@ -77,13 +81,12 @@ def get_operators(args):
     if args.quantize == "BNN":
         return vq.BNNLinear, vq.BNNConv2d
     elif args.quantize == "BC":
-        return vq.BCLinear, vq.BCConv2d
+        return vq.BNNLinear, vq.BNNConv2d
     elif args.quantize == "identical":
         return vq.Linear, vq.Conv2d
     elif args.quantize == "VQ":
         return vq.VQLinear, vq.VQConv2d
-    elif args.quantize == "VQA":
-        return vq.VQActivationLinear, vq.VQActivationConv2d
+
     assert False, "No matched for {}.".format(args.quantize)
 
 
@@ -165,16 +168,12 @@ def main():
                               input_size=args.input_size, augment=False)
     }
     transform = getattr(model, 'input_transform', default_transform)
-    if args.optimizer == 'Adam':
-        regime = getattr(model, 'regime_Adam', {0: {'optimizer': args.optimizer,
-                                               'lr': args.lr,
-                                               'momentum': args.momentum,
-                                               'weight_decay': args.weight_decay}})
-    else:
-        regime = getattr(model, 'regime_SGD', {0: {'optimizer': args.optimizer,
-                                                    'lr': args.lr,
-                                                    'momentum': args.momentum,
-                                                    'weight_decay': args.weight_decay}})
+
+    regime = getattr(model, 'regime', {0: {'optimizer': args.optimizer,
+                                           'lr': args.lr,
+                                           'momentum': args.momentum,
+                                           'weight_decay': args.weight_decay}})
+
     # define loss function (criterion) and optimizer
     criterion = getattr(model, 'criterion', nn.CrossEntropyLoss)()
     criterion.type(args.type)
@@ -196,24 +195,50 @@ def main():
         batch_size=args.batch_size, shuffle=True,
         num_workers=args.workers, pin_memory=True)
 
-    if args.use_vq_optim:
-        optimizer = torch.optim.SGD(split_parameters(model), lr=args.lr)
+    # optimizer = torch.optim.SGD(param_groups, lr=args.lr)
+    regime[0]['optimizer'] = args.optimizer
+    lr, weight_decay, momentum = args.lr, 0, 0
+    if 'lr' in regime[0]:
+        lr = regime[0]['lr']
+    if 'weight_decay' in regime[0]:
+        weight_decay = regime[0]['weight_decay']
+    if 'momentun' in regime[0]:
+        momentum = regime[0]['momentum']
+
+    if args.optimizer == 'SGD':
+        optimizer = torch.optim.SGD(
+            model.parameters(), lr=lr, weight_decay=weight_decay, momentum=momentum)
+    elif args.optimizer == 'Adam':
+        optimizer = torch.optim.Adam(
+            model.parameters(), lr=lr, weight_decay=weight_decay)
+    elif args.optimizer == 'VQSGD':
+        optimizer = VQSGD(args, split_parameters(model), lr=lr,
+                          weight_decay=weight_decay, momentum=momentum)
+    elif args.optimizer == 'VQAdam':
+        optimizer = VQAdam(args, split_parameters(model), lr=lr,
+                           weight_decay=weight_decay)
     else:
-        optimizer = torch.optim.SGD(model.parameters(), lr=args.lr)
+        logging.error("{} is not supported".format(args.optimizer))
 
     logging.info('training regime: %s', regime)
+    if len(list(regime.keys())) > 1:
+        milestones = list(regime.keys())[1:]
+    else:
+        milestones = [args.epochs]
+    logging.info(
+        "opt: {}, scheduler milestones: {}, gamma: {}".format(optimizer, milestones, args.gamma))
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(
+        optimizer, milestones=milestones, gamma=args.gamma)
 
     for epoch in range(args.start_epoch, args.epochs):
-        optimizer = adjust_optimizer(optimizer, epoch, regime, args)
-
+        # optimizer = adjust_optimizer(optimizer, epoch, regime, args)
         # train for one epoch
         train_loss, train_prec1, train_prec5 = train(
             train_loader, model, criterion, epoch, optimizer)
-      
-        # evaluate on validation set
 
+        # evaluate on validation set
         val_loss, val_prec1, val_prec5 = validate(
-            val_loader, model, criterion, epoch)    
+            val_loader, model, criterion, epoch)
 
         # remember best prec@1 and save checkpoint
         is_best = val_prec1 > best_prec1
@@ -241,7 +266,14 @@ def main():
         results.add(epoch=epoch + 1, train_loss=train_loss, val_loss=val_loss,
                     train_error1=100 - train_prec1, val_error1=100 - val_prec1,
                     train_error5=100 - train_prec5, val_error5=100 - val_prec5)
+        # results.plot(x='epoch', y=['train_loss', 'val_loss'],
+        #             title='Loss', ylabel='loss')
+        # results.plot(x='epoch', y=['train_error1', 'val_error1'],
+        #             title='Error@1', ylabel='error %')
+        # results.plot(x='epoch', y=['train_error5', 'val_error5'],
+        #             title='Error@5', ylabel='error %')
         results.save()
+        scheduler.step()
 
 
 def forward(data_loader, model, criterion, epoch=0, training=True, optimizer=None):
@@ -252,12 +284,6 @@ def forward(data_loader, model, criterion, epoch=0, training=True, optimizer=Non
     losses = AverageMeter()
     top1 = AverageMeter()
     top5 = AverageMeter()
-    # f1 = AverageMeter()
-    hl = AverageMeter()
-    tp = AverageMeter()
-    fp = AverageMeter()
-    tn = AverageMeter()
-    fn = AverageMeter()
 
     end = time.time()
     for i, (inputs, target) in enumerate(data_loader):
@@ -265,35 +291,29 @@ def forward(data_loader, model, criterion, epoch=0, training=True, optimizer=Non
         data_time.update(time.time() - end)
         if args.gpus is not None:
             target = target.cuda(async=True)
-
-        if args.dataset == 'mnist_linear':
+        if args.dataset == 'mnist-linear':
             input_var = Variable(
                 inputs.view(-1, 28 * 28).type(args.type), volatile=not training)
         else:
             input_var = Variable(inputs.type(args.type), volatile=not training)
         target_var = Variable(target)
-
         # compute output
         output = model(input_var)
         loss = criterion(output, target_var)
+
         if type(output) is list:
             output = output[0]
 
         # measure accuracy and record loss
-        if args.dataset == 'kdd2010' or args.dataset == 'rcv1_binary':
-            temp_tp, temp_tn, temp_fp, temp_fn = binary_metric(output.data,target)
-            tp.update(temp_tp)
-            tn.update(temp_tn)
-            fp.update(temp_fp)
-            fn.update(temp_fn)  
-            acc = (tp.sum + tn.sum) / (tp.sum + tn.sum + fp.sum + fn.sum)
-            f1 = (2.0 * tp.sum) / (2.0 * tp.sum + fp.sum + fn.sum)
+        if args.dataset == 'kdd2010':
+            topk = (1, 1)
         else:
-            prec1, prec5 = topk_precision(output.data, target, topk=(1, 5))
-            top1.update(prec1.item(), inputs.size(0))
-            top5.update(prec5.item(), inputs.size(0))
+            topk = (1, 5)
+        prec1, prec5 = accuracy(output.data, target, topk=topk)
 
         losses.update(loss.item(), inputs.size(0))
+        top1.update(prec1.item(), inputs.size(0))
+        top5.update(prec5.item(), inputs.size(0))
 
         if training:
             # compute gradient and do SGD step
@@ -302,46 +322,33 @@ def forward(data_loader, model, criterion, epoch=0, training=True, optimizer=Non
             for p in list(model.parameters()):
                 if hasattr(p, 'org'):
                     p.data.copy_(p.org)
+
             optimizer.step()
-            if not args.use_vq_optim:
+            if 'VQ' not in args.optimizer:
                 for p in list(model.parameters()):
                     if hasattr(p, 'org'):
-                        if args.quantize == "BC" or args.quantize == "BNN":
+                        if args.quantize == 'BC' or args.quantize == 'BNN':
                             p.org.copy_(p.data.clamp_(-1, 1))
                         else:
-                            p.org.copy_(p.data)                    
+                            p.org.copy_(p.data)
 
         # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
- 
-        if i % args.print_freq == 0:
-            log_info = '{phase} - Epoch: [{0}][{1}/{2}]\t''Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t''Data {data_time.val:.3f} ({data_time.avg:.3f})\t''Loss {loss.val:.4f} ({loss.avg:.4f})\t'.format(epoch, i, len(data_loader),
-                            phase='TRAINING' if training else 'EVALUATING',
-                            batch_time=batch_time,
-                            data_time=data_time, loss=losses)
-            if args.dataset == 'kdd2010' or args.dataset == 'rcv1_binary':
-                log_info += 'F1 {0:.3f}\t''Acc {1:.3f}'.format(
-                    f1.item(), acc.item())
-            else:
-                log_info += 'Prec@1 {top1.val:.3f} ({top1.avg:.3f})\t''Prec@5 {top5.val:.3f} ({top5.avg:.3f})'.format(top1=top1, top5=top5)
-            logging.info(log_info)
-            # logging.info('{phase} - Epoch: [{0}][{1}/{2}]\t'
-            #         'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-            #         'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
-            #         'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
-            #         'Prec@1 {top1.val:.3f} ({top1.avg:.3f})\t'
-            #         'Prec@5 {top5.val:.3f} ({top5.avg:.3f})'.format(
-            #             epoch, i, len(data_loader),
-            #             phase='TRAINING' if training else 'EVALUATING',
-            #             batch_time=batch_time,
-            #             data_time=data_time, loss=losses, top1=top1, top5=top5))
 
-    # return losses.avg, top1.avg, top5.avg
-    if args.dataset == 'kdd2010' or args.dataset == 'rcv1_binary':
-        return losses.avg, f1.item(), acc.item()    
-    else:
-        return losses.avg, top1.avg, top5.avg
+        if i % args.print_freq == 0:
+            logging.info('{phase} - Epoch: [{0}][{1}/{2}]\t'
+                         'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                         'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
+                         'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
+                         'Prec@1 {top1.val:.3f} ({top1.avg:.3f})\t'
+                         'Prec@5 {top5.val:.3f} ({top5.avg:.3f})'.format(
+                             epoch, i, len(data_loader),
+                             phase='TRAINING' if training else 'EVALUATING',
+                             batch_time=batch_time,
+                             data_time=data_time, loss=losses, top1=top1, top5=top5))
+
+    return losses.avg, top1.avg, top5.avg
 
 
 def train(data_loader, model, criterion, epoch, optimizer):
