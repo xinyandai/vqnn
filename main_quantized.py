@@ -42,7 +42,7 @@ parser.add_argument('--gpus', default='0',
                     help='gpus used for training - e.g 0,1,3')
 parser.add_argument('-j', '--workers', default=8, type=int, metavar='N',
                     help='number of data loading workers (default: 8)')
-parser.add_argument('--epochs', default=200, type=int, metavar='N',
+parser.add_argument('--epochs', default=100, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
@@ -69,8 +69,7 @@ parser.add_argument('-e', '--evaluate', type=str, metavar='FILE',
 
 parser.add_argument('--dim', type=int, default=4)
 parser.add_argument('--ks', type=int, default=16)
-parser.add_argument('--quantize', type=str, default='VQ',
-                    choices=['VQ', 'BNN', 'BC', 'identical'])
+parser.add_argument('--quantize', type=str, default='VQ')
 
 
 def get_operators(args):
@@ -83,7 +82,8 @@ def get_operators(args):
         return vq.Linear, vq.Conv2d
     elif args.quantize == "VQ":
         return vq.VQLinear, vq.VQConv2d
-
+    elif args.quantize == "VQA":
+        return vq.VQActivationLinear, vq.VQActivationConv2d
     assert False, "No matched for {}.".format(args.quantize)
 
 

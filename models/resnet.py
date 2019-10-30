@@ -160,6 +160,13 @@ class ResNet_imagenet(ResNet):
             60: {'lr': 1e-3, 'weight_decay': 0},
             90: {'lr': 1e-4}
         }
+        self.regime_Adam = {
+            0: {'optimizer': 'Adam', 'lr': 5e-3},
+            30: {'lr': 1e-3},
+            60: {'lr': 5e-4},
+            70: {'lr': 1e-4},
+            80: {'lr': 1e-5}
+        }
 
 
 class ResNet_cifar10(ResNet):
@@ -224,15 +231,19 @@ def resnet(**kwargs):
         if depth == 152:
             return ResNet_imagenet(args=args, num_classes=num_classes,
                                    block=Bottleneck, layers=[3, 8, 36, 3])
+    #
+    # elif dataset == 'cifar10':
+    #     num_classes = num_classes or 10
+    #     depth = depth or 18
+    #     return ResNet_cifar10(args=args, num_classes=num_classes,
+    #                           block=BasicBlock, depth=depth)
+    #
+    # elif dataset == 'cifar100':
+    #     num_classes = num_classes or 100
+    #     depth = depth or 18
+    #     return ResNet_cifar10(args=args, num_classes=num_classes,
+    #                           block=BasicBlock, depth=depth)
 
-    elif dataset == 'cifar10':
-        num_classes = num_classes or 10
-        depth = depth or 18
-        return ResNet_cifar10(args=args, num_classes=num_classes,
-                              block=BasicBlock, depth=depth)
-
-    elif dataset == 'cifar100':
-        num_classes = num_classes or 100
-        depth = depth or 18
-        return ResNet_cifar10(args=args, num_classes=num_classes,
-                              block=BasicBlock, depth=depth)
+    elif dataset in ["cifar10", "cifar100"]:
+        from .resnet_cifar import ResNetCifar
+        return ResNetCifar(**kwargs)
