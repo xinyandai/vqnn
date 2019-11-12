@@ -8,8 +8,9 @@ import torchvision.datasets as torch_datasets
 
 _DATASETS_MAIN_PATH = './Datasets'
 
-# _IMAGE_NET_PATH = '/data/dataset/ILSVRC2012/'
-_IMAGE_NET_PATH = '/research/jcheng2/xinyan/zzhang/AlexnetandVGG/ILSVRC2012/'
+#_IMAGE_NET_PATH = '/home/xinyan/program/data/ILSVRC2012/'
+_IMAGE_NET_PATH = '/data/dataset/ILSVRC2012/'
+#_IMAGE_NET_PATH = '/research/jcheng2/xinyan/zzhang/AlexnetandVGG/ILSVRC2012/'
 
 _dataset_path = {
     'cifar10': os.path.join(_DATASETS_MAIN_PATH, 'CIFAR10'),
@@ -61,11 +62,11 @@ class RCV1_BINARY(Dataset):
                 os.path.join(root, 'rcv1_train.binary'))
         print("Loading RCV1_BINARY...")
         y = np.where(y > 0, y, 0)
-        self.X = torch.from_numpy(X.todense())
+        self.X = X
         self.y = torch.from_numpy(y).long()
 
     def __getitem__(self, index):
-        return self.X[index], self.y[index]
+        return torch.from_numpy(self.X[index].todense()).view(-1), self.y[index]
 
     def __len__(self):
         return self.y.shape[0]

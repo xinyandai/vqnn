@@ -69,31 +69,63 @@ parser.add_argument('-e', '--evaluate', type=str, metavar='FILE',
 
 parser.add_argument('--dim', type=int, default=4)
 parser.add_argument('--ks', type=int, default=16)
-parser.add_argument('--quantize', type=str, default='VQ')
+parser.add_argument('--r', type=int, default=1)
+parser.add_argument('--quantize', type=str, default='identical')
+parser.add_argument('--activation', type=str, default='relu')
+parser.add_argument('--dropout', type=str, default='dropout')
+parser.add_argument('--pretrained', default=False, type=bool)
+parser.add_argument('--adversarial', default=False, type=bool)
 
 
 def get_operators(args):
     import models.vq_ops as vq
+    if args.activation == "relu":
+        args.activation = lambda args, inplace : nn.ReLU(inplace)
+    elif args.activation == "vq":
+        args.activation = vq.VQActivation
+    elif args.activation == 'identical':
+        args.activation = vq.Identical
+    else:
+        assert False
+
+    if args.dropout == 'dropout':
+        args.dropout = lambda args: nn.Dropout()
+    elif args.dropout == 'vq':
+        args.dropout = vq.VQActivation
+    elif args.dropout == 'identical':
+        args.dropout = vq.Identical
+    else:
+        assert False
+
     if args.quantize == "BNN":
-        return vq.BNNLinear, vq.BNNConv2d
+        args.linear, args.conv2d =  vq.BNNLinear, vq.BNNConv2d
     elif args.quantize == "BC":
-        return vq.BCLinear, vq.BCConv2d
+        args.linear, args.conv2d =  vq.BCLinear, vq.BCConv2d
     elif args.quantize == "identical":
-        return vq.Linear, vq.Conv2d
+        args.linear, args.conv2d =  vq.Linear, vq.Conv2d
     elif args.quantize == "VQ":
-        return vq.VQLinear, vq.VQConv2d
+        args.linear, args.conv2d =  vq.VQLinear, vq.VQConv2d
     elif args.quantize == "VQA":
-        return vq.VQActivationLinear, vq.VQActivationConv2d
-    assert False, "No matched for {}.".format(args.quantize)
+        args.linear, args.conv2d =  vq.VQActivationLinear, vq.VQActivationConv2d
+    else:
+        assert False, "No matched for {}.".format(args.quantize)
 
 
 def main():
     global args, best_prec1
     best_prec1 = 0
     args = parser.parse_args()
-    args.linear, args.conv2d = get_operators(args)
-    print("using linear {}  and conv2d {}".
-          format(args.linear, args.conv2d))
+
+    get_operators(args)
+
+    print("using dropout {} \n"
+          "using activation {} \n"
+          "using linear {} \n"
+          "and conv2d {} \n".
+          format(args.dropout,
+                 args.activation,
+                 args.linear,
+                 args.conv2d))
 
     if args.evaluate:
         args.results_dir = '/tmp'
@@ -134,7 +166,7 @@ def main():
         if not os.path.isfile(args.evaluate):
             parser.error('invalid checkpoint: {}'.format(args.evaluate))
         checkpoint = torch.load(args.evaluate)
-        model.load_state_dict(checkpoint['state_dict'])
+        model.load_state_dict(checkpoint['state_dict'], strict=False)
         logging.info("loaded checkpoint '%s' (epoch %s)",
                      args.evaluate, checkpoint['epoch'])
     elif args.resume:
@@ -148,7 +180,7 @@ def main():
             checkpoint = torch.load(checkpoint_file)
             args.start_epoch = checkpoint['epoch'] - 1
             best_prec1 = checkpoint['best_prec1']
-            model.load_state_dict(checkpoint['state_dict'])
+            model.load_state_dict(checkpoint['state_dict'], strict=False)
             logging.info("loaded checkpoint '%s' (epoch %s)",
                          checkpoint_file, checkpoint['epoch'])
         else:
@@ -186,15 +218,16 @@ def main():
         batch_size=args.batch_size, shuffle=False,
         num_workers=args.workers, pin_memory=True)
 
-    if args.evaluate:
-        validate(val_loader, model, criterion, 0)
-        return
-
     train_data = get_dataset(args.dataset, 'train', transform['train'])
     train_loader = torch.utils.data.DataLoader(
         train_data,
         batch_size=args.batch_size, shuffle=True,
         num_workers=args.workers, pin_memory=True)
+
+    if args.evaluate:
+        validate(train_loader, model, criterion, 0)
+        # validate(val_loader, model, criterion, 0)
+        return
 
     if args.use_vq_optim:
         optimizer = torch.optim.SGD(split_parameters(model), lr=args.lr)
@@ -244,6 +277,17 @@ def main():
         results.save()
 
 
+# FGSM attack code
+def fgsm_attack(image, epsilon, data_grad):
+    # Collect the element-wise sign of the data gradient
+    sign_data_grad = data_grad.sign()
+    # Create the perturbed image by adjusting each pixel of the input image
+    perturbed_image = image + epsilon*sign_data_grad
+    # Adding clipping to maintain [0,1] range
+    perturbed_image = torch.clamp(perturbed_image, 0, 1)
+    # Return the perturbed image
+    return perturbed_image
+
 def forward(data_loader, model, criterion, epoch=0, training=True, optimizer=None):
     if args.gpus and len(args.gpus) > 1:
         model = torch.nn.DataParallel(model, args.gpus)
@@ -266,12 +310,20 @@ def forward(data_loader, model, criterion, epoch=0, training=True, optimizer=Non
         if args.gpus is not None:
             target = target.cuda(async=True)
 
-        if args.dataset == 'mnist_linear':
-            input_var = Variable(
-                inputs.view(-1, 28 * 28).type(args.type), volatile=not training)
-        else:
-            input_var = Variable(inputs.type(args.type), volatile=not training)
+        input_var = Variable(inputs.type(args.type),)
         target_var = Variable(target)
+
+        if args.adversarial:
+            for _ in range(40):
+                input_var = Variable(input_var.type(args.type), )
+                input_var.requires_grad = True
+                output = model(input_var)
+                loss = criterion(output, target_var)
+                model.zero_grad()
+                loss.backward()
+                data_grad = input_var.grad.data
+                epsilon = 0.001
+                input_var = fgsm_attack(input_var, epsilon, data_grad)
 
         # compute output
         output = model(input_var)

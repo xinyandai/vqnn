@@ -28,7 +28,7 @@ class BasicBlock(nn.Module):
         super(BasicBlock, self).__init__()
         self.conv1 = conv3x3(args, inplanes, planes, stride)
         self.bn1 = nn.BatchNorm2d(planes)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = args.activation(args, inplace=True)
         self.conv2 = conv3x3(args, planes, planes)
         self.bn2 = nn.BatchNorm2d(planes)
         self.downsample = downsample
@@ -67,7 +67,7 @@ class Bottleneck(nn.Module):
         self.conv3 = args.conv2d(
             args, planes, planes * 4, kernel_size=1, bias=False)
         self.bn3 = nn.BatchNorm2d(planes * 4)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = args.activation(args, inplace=True)
         self.downsample = downsample
         self.stride = stride
 
@@ -143,7 +143,7 @@ class ResNet_imagenet(ResNet):
         self.conv1 = args.conv2d(args, 3, 64, kernel_size=7, stride=2, padding=3,
                                  bias=False)
         self.bn1 = nn.BatchNorm2d(64)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = args.activation(args, inplace=True)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
         self.layer1 = self._make_layer(args, block, 64, layers[0])
         self.layer2 = self._make_layer(args, block, 128, layers[1], stride=2)
@@ -158,7 +158,11 @@ class ResNet_imagenet(ResNet):
                 'weight_decay': 1e-4, 'momentum': 0.9},
             30: {'lr': 1e-2},
             60: {'lr': 1e-3, 'weight_decay': 0},
-            90: {'lr': 1e-4}
+            70: {'lr': 1e-4},
+            80: {'lr': 1e-5},
+            95: {'lr': 1e-3},
+            105: {'lr': 1e-4},
+            115: {'lr': 1e-5},
         }
         self.regime_Adam = {
             0: {'optimizer': 'Adam', 'lr': 5e-3},
@@ -181,7 +185,7 @@ class ResNet_cifar10(ResNet):
                                  kernel_size=3, stride=1,
                                  padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(16 * self.inflate)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = args.activation(args, inplace=True)
         self.maxpool = lambda x: x
         self.layer1 = self._make_layer(args, block, 16 * self.inflate, n)
         self.layer2 = self._make_layer(
@@ -247,3 +251,4 @@ def resnet(**kwargs):
     elif dataset in ["cifar10", "cifar100"]:
         from .resnet_cifar import ResNetCifar
         return ResNetCifar(**kwargs)
+    assert False

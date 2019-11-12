@@ -164,6 +164,8 @@ def accuracy(output, target):
     # print(output.shape,type(output),target.shape,type(target))
     pred = output.max(1)[1] >= 0.5
     truth = target >= 0.5
+    pred = pred.type(torch.float)
+    truth = truth.type(torch.float)
     print(pred.shape,type(pred),truth,type(truth))
     acc = pred.eq(truth).sum() / target.numel()
     return acc
@@ -171,6 +173,8 @@ def accuracy(output, target):
 def binary_metric(output, target):
     pred = output.max(1)[1] > 0.5
     truth = target > 0.5
+    pred = pred.type(torch.float)
+    truth = truth.type(torch.float)
     tp = pred.mul(truth).sum(0).float()
     tn = (1 - pred).mul(1 - truth).sum(0).float()
     fp = pred.mul(1 - truth).sum(0).float()

@@ -96,7 +96,10 @@ class ResNet(nn.Module):
                 'weight_decay': 1e-4, 'momentum': 0.9},
             51: {'lr': 1e-2},
             71: {'lr': 1e-3, 'weight_decay': 0},
-            91: {'lr': 1e-4}
+            91: {'lr': 1e-4},
+            201:{'lr': 1e-2},
+            211: {'lr': 1e-3},
+            221: {'lr': 1e-4}
         }
 
         self.regime_Adam = {
@@ -138,6 +141,8 @@ def ResNetCifar(**kwargs):
         num_classes = num_classes or 100
     else:
         assert False
+
+    depth = depth or 18
     if depth == 152:
         return ResNet(args, Bottleneck, [3, 8, 36, 3], num_classes=num_classes)
     if depth == 101:
@@ -148,3 +153,4 @@ def ResNetCifar(**kwargs):
         return ResNet(args, ResidualBlock, [3, 4, 6, 3], num_classes=num_classes)
     if depth == 18:
         return ResNet(args, ResidualBlock, [2, 2, 2, 2], num_classes=num_classes)
+    assert False
