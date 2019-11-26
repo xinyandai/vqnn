@@ -75,14 +75,17 @@ parser.add_argument('--activation', type=str, default='relu')
 parser.add_argument('--dropout', type=str, default='dropout')
 parser.add_argument('--pretrained', default=False, type=bool)
 parser.add_argument('--adversarial', default=False, type=bool)
+parser.add_argument('--save-activation', default=False, type=bool)
 
 
 def get_operators(args):
     import models.vq_ops as vq
+    import models.vq_activation as vqa
+    import models.vq_codebook as vqc
     if args.activation == "relu":
         args.activation = lambda args, inplace : nn.ReLU(inplace)
     elif args.activation == "vq":
-        args.activation = vq.VQActivation
+        args.activation = vqa.VQActivation
     elif args.activation == 'identical':
         args.activation = vq.Identical
     else:
@@ -91,22 +94,24 @@ def get_operators(args):
     if args.dropout == 'dropout':
         args.dropout = lambda args: nn.Dropout()
     elif args.dropout == 'vq':
-        args.dropout = vq.VQActivation
+        args.dropout = vqa.VQActivation
     elif args.dropout == 'identical':
         args.dropout = vq.Identical
     else:
         assert False
 
-    if args.quantize == "BNN":
+    if args.quantize.upper() == "BNN":
         args.linear, args.conv2d =  vq.BNNLinear, vq.BNNConv2d
-    elif args.quantize == "BC":
+    elif args.quantize.upper() == "BC":
         args.linear, args.conv2d =  vq.BCLinear, vq.BCConv2d
-    elif args.quantize == "identical":
+    elif args.quantize.lower() == "identical":
         args.linear, args.conv2d =  vq.Linear, vq.Conv2d
-    elif args.quantize == "VQ":
+    elif args.quantize.upper() == "VQ":
         args.linear, args.conv2d =  vq.VQLinear, vq.VQConv2d
-    elif args.quantize == "VQA":
-        args.linear, args.conv2d =  vq.VQActivationLinear, vq.VQActivationConv2d
+    elif args.quantize.upper() == "VQA":
+        args.linear, args.conv2d =  vqa.VQActivationLinear, vqa.VQActivationConv2d
+    elif args.quantize.upper() == "VQC":
+        args.linear, args.conv2d = vq.Linear, vqc.VQCodebookConv2d
     else:
         assert False, "No matched for {}.".format(args.quantize)
 
