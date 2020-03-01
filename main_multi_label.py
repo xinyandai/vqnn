@@ -87,15 +87,18 @@ class XMLModel(torch.nn.Module):
         return torch.sigmoid(x)
 
 
-def forward(model, optimizer, criterion, loader, train):
+def forward(model, optimizer, criterion, loader, device, train):
     losses = AverageMeter()
     prec = AverageMeter()
     top1 = AverageMeter()
     top5 = AverageMeter()
+
     with tqdm(total=len(loader), desc="# Train" if train else "# Test") as p_bar:
         for inputs, target in loader:
             model.train()
             inputs = sparse_tensor(inputs)
+            inputs = inputs.to(device)
+            target = target.to(device)
             optimizer.zero_grad()
             output = model(inputs)
             loss = criterion(output, target)
@@ -119,8 +122,8 @@ def forward(model, optimizer, criterion, loader, train):
     return losses.avg, prec.avg, top1.avg, top5.avg
 
 
-def main(in_dim, hidden, out_dim, batch_size, lr, epoch):
-    model = XMLModel(in_dim, hidden, out_dim)
+def main(in_dim, hidden, out_dim, batch_size, lr, epoch, device):
+    model = XMLModel(in_dim, hidden, out_dim).to(device)
     criterion = torch.nn.BCELoss()
     optimizer = torch.optim.SGD(model.parameters(), lr=lr)
 
@@ -131,14 +134,18 @@ def main(in_dim, hidden, out_dim, batch_size, lr, epoch):
     train_loader = torch.utils.data.DataLoader(
         train_data, batch_size=batch_size, shuffle=False, pin_memory=True)
 
-    loss, bce, top1, top5 = forward(model, optimizer, criterion, val_loader, False)
+    loss, bce, top1, top5 = forward(model, optimizer, criterion, val_loader, device, False)
     print("Pre Train Test \tLoss [%.3f] BCE[%.3f] Top1[%.3f] Top5[%.3f]" % (loss, bce, top1, top5))
     for i in range(epoch):
-        loss, bce, top1, top5 = forward(model, optimizer, criterion, train_loader, True)
+        loss, bce, top1, top5 = forward(model, optimizer, criterion, train_loader, device, True)
         print("Train Epoch [%d] \tLoss [%.3f] BCE[%.3f] Top1[%.3f] Top5[%.3f]" % (i, loss, bce, top1, top5))
-        loss, bce, top1, top5 = forward(model, optimizer, criterion, val_loader, False)
+        loss, bce, top1, top5 = forward(model, optimizer, criterion, val_loader, device, False)
         print("Test Epoch [%d] \tLoss [%.3f] BCE[%.3f] Top1[%.3f] Top5[%.3f]" % (i, loss, bce, top1, top5))
 
 
 if __name__ == '__main__':
-    main(135909, 128, 670091, 32, 0.01, 10)
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
+    main(135909, 128, 670091, 32, 0.01, 10, device)
