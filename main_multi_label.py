@@ -10,8 +10,10 @@ from utils import AverageMeter
 def topk_precision(output, target, topk=(1,)):
     """Computes the precision@k for the specified values of k"""
     maxk = max(topk)
+    output = output.cpu()
+    target = target.cpu()
     labels = target.sum()
-
+    
     _, indices = output.float().topk(maxk, 1, True, True)
 
     res = []
@@ -29,7 +31,7 @@ class AmazonData(Dataset):
     def __init__(self, train=True):
         self.n_classes = 670091
         self.n_features = 135909
-        file_name = 'data/Amazon/amazon_{}.txt'.format('train' if train else 'Test')
+        file_name = 'data/Amazon/amazon_{}.txt'.format('train' if train else 'test')
         self.X, self.y = datasets.load_svmlight_file(
             file_name, multilabel=True, offset=1, n_features=self.n_features)
 
@@ -129,10 +131,10 @@ def main(in_dim, hidden, out_dim, batch_size, lr, epoch, device):
 
     val_data = AmazonData(False)
     val_loader = torch.utils.data.DataLoader(
-        val_data, batch_size=batch_size, shuffle=False, pin_memory=True)
+        val_data, batch_size=batch_size, shuffle=False)
     train_data = AmazonData(True)
     train_loader = torch.utils.data.DataLoader(
-        train_data, batch_size=batch_size, shuffle=False, pin_memory=True)
+        train_data, batch_size=batch_size, shuffle=False)
 
     loss, bce, top1, top5 = forward(model, optimizer, criterion, val_loader, device, False)
     print("Pre Train Test \tLoss [%.3f] BCE[%.3f] Top1[%.3f] Top5[%.3f]" % (loss, bce, top1, top5))
@@ -148,4 +150,4 @@ if __name__ == '__main__':
         device = torch.device("cuda")
     else:
         device = torch.device("cpu")
-    main(135909, 128, 670091, 32, 0.01, 10, device)
+    main(135909, 128, 670091, 32, 0.001, 10, device)
