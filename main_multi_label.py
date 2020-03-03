@@ -25,11 +25,11 @@ def topk_precision(output, target, topk=(1,)):
     return res
 
 
-class AmazonData(Dataset):
+class XMLData(Dataset):
     def __init__(self, train=True):
         self.n_classes = 670091
         self.n_features = 135909
-        file_name = 'data/Amazon/amazon_{}.txt'.format('train' if train else 'Test')
+        file_name = 'data/Amazon/amazon_{}.txt'.format('train' if train else 'test')
         self.X, self.y = datasets.load_svmlight_file(
             file_name, multilabel=True, offset=1, n_features=self.n_features)
         self._get_y = self._get_y_dense
@@ -153,12 +153,12 @@ def main(in_dim, hidden, out_dim, batch_size, lr, epoch, device):
     criterion = CrossEntropy()
     # optimizer = torch.optim.SGD(model.parameters(), lr=lr)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    val_data = AmazonData(False)
+    val_data = XMLData(False)
     val_loader = torch.utils.data.DataLoader(
-        val_data, batch_size=batch_size, shuffle=False, pin_memory=True)
-    train_data = AmazonData(True)
+        val_data, batch_size=batch_size, shuffle=False)
+    train_data = XMLData(True)
     train_loader = torch.utils.data.DataLoader(
-        train_data, batch_size=batch_size, shuffle=False, pin_memory=True)
+        train_data, batch_size=batch_size, shuffle=False)
 
     loss, bce, top1, top5 = forward(model, optimizer, criterion, val_loader, device, False)
     print("Pre Train Test \tLoss [%.3f] BCE[%.3f] Top1[%.3f] Top5[%.3f]" % (loss, bce, top1, top5))
