@@ -10,6 +10,8 @@ from utils import AverageMeter
 def topk_precision(output, target, topk=(1,)):
     """Computes the precision@k for the specified values of k"""
     maxk = max(topk)
+    output = output.cpu()
+    target = target.cpu()
     labels = target.sum().cpu().numpy()
 
     _, indices = output.float().topk(maxk, 1, True, True)
