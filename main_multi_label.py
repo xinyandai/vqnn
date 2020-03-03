@@ -10,10 +10,8 @@ from utils import AverageMeter
 def topk_precision(output, target, topk=(1,)):
     """Computes the precision@k for the specified values of k"""
     maxk = max(topk)
-    output = output.cpu()
-    target = target.cpu()
-    labels = target.sum()
-    
+    labels = target.sum().cpu().numpy()
+
     _, indices = output.float().topk(maxk, 1, True, True)
 
     res = []
@@ -31,9 +29,10 @@ class AmazonData(Dataset):
     def __init__(self, train=True):
         self.n_classes = 670091
         self.n_features = 135909
-        file_name = 'data/Amazon/amazon_{}.txt'.format('train' if train else 'test')
+        file_name = 'data/Amazon/amazon_{}.txt'.format('train' if train else 'Test')
         self.X, self.y = datasets.load_svmlight_file(
             file_name, multilabel=True, offset=1, n_features=self.n_features)
+        self._get_y = self._get_y_dense
 
     def _get_x(self, index):
         data = self.X.getrow(index).tocoo()
@@ -42,11 +41,20 @@ class AmazonData(Dataset):
         data = torch.sparse.FloatTensor(i, v, torch.Size(data.shape))
         return data
 
-    def _get_y(self, index):
+    def _get_y_dense(self, index):
         classes = self.y[index]
         y = torch.zeros(self.n_classes)
         y[torch.LongTensor(classes)] = 1.0
         return y / len(classes)
+
+    def _get_y_sparse(self, index):
+        cols = self.y[index]
+        zeros = [0 for _ in cols]
+        ones = [1 for _ in cols]
+        i = torch.LongTensor(np.vstack((zeros, cols)))
+        v = torch.FloatTensor(ones)
+        data = torch.sparse.FloatTensor(i, v, torch.Size((1, self.n_classes)))
+        return data
 
     def __getitem__(self, index):
         return self._get_x(index), self._get_y(index)
@@ -86,7 +94,23 @@ class XMLModel(torch.nn.Module):
         x = self.fc1(x)
         x = F.relu(x)
         x = self.fc2(x)
-        return torch.sigmoid(x)
+        return x
+
+
+class CrossEntropy(torch.nn.Module):
+    def __init__(self):
+        super(CrossEntropy, self).__init__()
+
+    def forward(self, x, target):
+        """
+        :param x: N * C
+        :param target: N * C
+        :return:
+        """
+        assert x.shape == target.shape, \
+            "pred : {} v.s. labels : {}".format(x.shape, target.shape)
+        x = torch.log_softmax(x, dim=0)
+        return -torch.sum(x * target)
 
 
 def forward(model, optimizer, criterion, loader, device, train):
@@ -126,15 +150,15 @@ def forward(model, optimizer, criterion, loader, device, train):
 
 def main(in_dim, hidden, out_dim, batch_size, lr, epoch, device):
     model = XMLModel(in_dim, hidden, out_dim).to(device)
-    criterion = torch.nn.BCELoss()
-    optimizer = torch.optim.SGD(model.parameters(), lr=lr)
-
+    criterion = CrossEntropy()
+    # optimizer = torch.optim.SGD(model.parameters(), lr=lr)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     val_data = AmazonData(False)
     val_loader = torch.utils.data.DataLoader(
-        val_data, batch_size=batch_size, shuffle=False)
+        val_data, batch_size=batch_size, shuffle=False, pin_memory=True)
     train_data = AmazonData(True)
     train_loader = torch.utils.data.DataLoader(
-        train_data, batch_size=batch_size, shuffle=False)
+        train_data, batch_size=batch_size, shuffle=False, pin_memory=True)
 
     loss, bce, top1, top5 = forward(model, optimizer, criterion, val_loader, device, False)
     print("Pre Train Test \tLoss [%.3f] BCE[%.3f] Top1[%.3f] Top5[%.3f]" % (loss, bce, top1, top5))
@@ -150,4 +174,4 @@ if __name__ == '__main__':
         device = torch.device("cuda")
     else:
         device = torch.device("cpu")
-    main(135909, 128, 670091, 32, 0.001, 10, device)
+    main(135909, 128, 670091, 128, 0.0001, 20, device)
